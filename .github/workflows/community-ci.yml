@@ -64,11 +64,27 @@ jobs:
           Write-Host "MSBuild: $msbuild"
           & .\build-community.ps1 -Tests -MSBuildPath $msbuild
 
+      - name: Collect test results
+        if: always()
+        shell: pwsh
+        run: |
+          # The script writes the NUnit report under $env:TEMP (8.3 short path on
+          # runners), so copy the newest report to a stable workspace path first.
+          $report = Get-ChildItem (Join-Path $env:TEMP 'wmc-community-tests-*\TestResults.xml') -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          if ($report) {
+            New-Item -ItemType Directory -Path TestResults -Force | Out-Null
+            Copy-Item $report.FullName (Join-Path 'TestResults' 'TestResults.xml') -Force
+            Write-Host "Collected $($report.FullName)"
+          } else {
+            Write-Host 'No NUnit report found'
+          }
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ github.run_number }}
-          path: ${{ env.TEMP }}\wmc-community-tests-*\TestResults.xml
+          path: TestResults/TestResults.xml
           if-no-files-found: warn
           retention-days: 14
