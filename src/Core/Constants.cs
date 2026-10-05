@@ -36,7 +36,8 @@ namespace WinMemoryCleaner
             }
 
             // Keep disabled until a community repository and a verified release channel exist.
-            public static readonly bool ReleaseChannelConfigured = false;
+            // Defaults to false; a redundant "= false" initializer would trip analyzer CA1805.
+            public static readonly bool ReleaseChannelConfigured;
 
             public static class CommandLineArgument
             {
@@ -74,9 +75,13 @@ namespace WinMemoryCleaner
                 // Local-only until a community repository and release channel are approved.
                 public static readonly Uri UpstreamUri = new Uri("https://github.com/IgorMundstein/WinMemoryCleaner");
                 public static readonly Uri AboutUri = new Uri(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "README.md"));
-                public static readonly Uri AssemblyInfoUri = null;
+
+                // Both stay at their default (null) value until a verified community update channel
+                // exists. They are left uninitialized on purpose: writing "= null" here is redundant.
+                public static readonly Uri AssemblyInfoUri;
+                public static readonly Uri LatestExeUri;
+
                 public static readonly Uri DownloadUri = AboutUri;
-                public static readonly Uri LatestExeUri = null;
                 public static readonly Uri Uri = AboutUri;
             }
         }
