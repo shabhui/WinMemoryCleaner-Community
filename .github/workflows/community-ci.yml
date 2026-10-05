@@ -41,9 +41,28 @@ jobs:
           & $nuget restore (Join-Path 'src' 'packages.config') -PackagesDirectory (Join-Path 'src' 'packages') -NonInteractive
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Report toolchain
+        shell: pwsh
+        run: |
+          msbuild -version
+          $pack = 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.0\mscorlib.dll'
+          $pkg = 'src\packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\.NETFramework\v4.0\mscorlib.dll'
+          Write-Host "installed 4.0 targeting pack: $(Test-Path $pack)"
+          Write-Host "restored net40 reference assemblies: $(Test-Path $pkg)"
+          if (-not (Test-Path $pkg)) { throw "net40 reference assemblies package is missing after restore" }
+
       - name: Build (production, test-isolated) and run safe tests
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests
+        run: |
+          # Visual Studio MSBuild (tools version != 4.0) imports the restored
+          # Microsoft.NETFramework.ReferenceAssemblies.net40 targets, so the
+          # runner does not need a locally installed .NET Framework 4.0 pack.
+          $msbuild = (Get-Command msbuild).Source
+          Write-Host "MSBuild: $msbuild"
+          & .\build-community.ps1 -Tests -MSBuildPath $msbuild
 
       - name: Upload test results
         if: always()

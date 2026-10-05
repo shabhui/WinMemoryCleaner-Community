@@ -3,20 +3,44 @@
 #   .\build-community.ps1              production build only
 #   .\build-community.ps1 -Tests       production + isolated test build + safe test suite
 #   .\build-community.ps1 -Tests -Package   ... and package dist\ with checksums
+#   .\build-community.ps1 -Tests -MSBuildPath <msbuild.exe>
+#                                      build with a specific MSBuild (for example Visual
+#                                      Studio MSBuild, for machines without the .NET
+#                                      Framework 4.0 targeting pack)
 param(
     [switch]$Tests,
-    [switch]$Package
+    [switch]$Package,
+    [string]$MSBuildPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $MyInvocation.MyCommand.Path
 $src = Join-Path $repo 'src'
-$msbuild = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe'
-if (-not (Test-Path $msbuild)) { throw "Framework MSBuild not found: $msbuild" }
+
+$toolsVersionArg = @()
+if ([string]::IsNullOrWhiteSpace($MSBuildPath)) {
+    # Default: in-box .NET Framework MSBuild (tools version 4.0). This path needs the system
+    # .NET Framework 4.0 targeting pack; the restored Microsoft.NETFramework.ReferenceAssemblies
+    # targets are only imported when the tools version is not 4.0.
+    $msbuild = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe'
+    $toolsVersionArg = @('/tv:4.0')
+} else {
+    # Visual Studio MSBuild (tools version != 4.0) imports the restored
+    # Microsoft.NETFramework.ReferenceAssemblies.net40 targets, so it also builds on machines
+    # without a 4.0 targeting pack.
+    $msbuild = $MSBuildPath
+}
+if (-not (Test-Path $msbuild)) { throw "MSBuild not found: $msbuild" }
 
 function Invoke-Build([string]$testBuild) {
-    & $msbuild (Join-Path $src 'WinMemoryCleaner.csproj') /t:Rebuild /tv:4.0 /nr:false /m:1 `
-        /p:Configuration=Release /p:Platform=AnyCPU "/p:CommunityTestBuild=$testBuild" /v:minimal /nologo
+    $buildArgs = @(
+        (Join-Path $src 'WinMemoryCleaner.csproj'),
+        '/t:Rebuild', '/nr:false', '/m:1',
+        '/p:Configuration=Release', '/p:Platform=AnyCPU',
+        "/p:CommunityTestBuild=$testBuild",
+        '/v:minimal', '/nologo'
+    ) + $toolsVersionArg
+    & $msbuild @buildArgs
     if ($LASTEXITCODE -ne 0) { throw "Build failed (CommunityTestBuild=$testBuild)" }
 }
 
