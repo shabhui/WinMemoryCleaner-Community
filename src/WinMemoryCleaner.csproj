@@ -271,6 +271,7 @@
     <Resource Include="Resources\Images\win-memory-cleaner.ico" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="NUnit" Version="3.14.0" />
     <Analyzer Include="packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\analyzers\dotnet\cs\Microsoft.CodeAnalysis.VersionCheckAnalyzer.resources.dll" />
     <Analyzer Include="packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\analyzers\dotnet\Microsoft.CodeAnalysis.VersionCheckAnalyzer.dll" />
     <Analyzer Include="packages\Microsoft.CodeQuality.Analyzers.3.3.2\analyzers\dotnet\cs\Humanizer.dll" />
