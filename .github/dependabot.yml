@@ -8,3 +8,8 @@ updates:
     labels:
       - "dependencies"
       - "nuget"
+    ignore:
+      # The test stack is pinned to the legacy NUnit 2.6.4 runner used by
+      # build-community.ps1 (nunit-console.exe). Moving to NUnit 3.x would
+      # require rewriting the suite and a different runner, so skip updates.
+      - dependency-name: "NUnit*"
