@@ -1,0 +1,55 @@
+name: Community CI
+
+# Non-publishing CI for the community continuation: build both configurations and
+# run the safe NUnit suite. No signing, no release, no package-manager submission.
+
+on:
+  push:
+    branches: [community, main]
+    paths: ['src/**', 'build-community.ps1']
+  pull_request:
+    branches: [community, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and safe tests
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: src/packages
+          key: community-nuget-${{ hashFiles('src/packages.config') }}
+          restore-keys: community-nuget-
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          $nuget = Join-Path $env:RUNNER_TEMP 'nuget.exe'
+          Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/v6/nuget.exe' -OutFile $nuget
+          & $nuget restore (Join-Path 'src' 'packages.config') -PackagesDirectory (Join-Path 'src' 'packages') -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Build (production, test-isolated) and run safe tests
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.run_number }}
+          path: ${{ env.TEMP }}\wmc-community-tests-*\TestResults.xml
+          if-no-files-found: warn
+          retention-days: 14

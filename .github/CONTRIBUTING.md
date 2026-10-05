@@ -1,5 +1,6 @@
 # Contributing to Windows Memory Cleaner
 
+> **Community note**: this repository is the unofficial community continuation; its working branch is `community` (upstream used `develop`). Everything below applies otherwise.
 Thank you for your interest in contributing! Contributions are what make the open-source community such a great place to learn, inspire, and create. Here’s how you can help.
 
 ---
