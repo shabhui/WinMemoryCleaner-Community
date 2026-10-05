@@ -1,3 +1,10 @@
+> [!IMPORTANT]
+> **Unofficial community continuation.** This repository continues [IgorMundstein/WinMemoryCleaner](https://github.com/IgorMundstein/WinMemoryCleaner) (last upstream activity December 2025). It is **not** affiliated with or endorsed by the original author and is **not** an official handover.
+>
+> - Original work © **Igor Mundstein**, **GPL-3.0** — full history, license, and attribution are preserved; see [CREDITS.md](CREDITS.md) and [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md).
+> - Community binary: `WinMemoryCleaner.Community.exe` ("WinMemoryCleaner Community"), independent settings key `HKLM\SOFTWARE\WinMemoryCleaner.Community`, **auto-update disabled** until a verified community release channel exists.
+> - Community builds are **unsigned**; the signed official binary remains the [upstream release](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest).
+
 # Windows Memory Cleaner
 
 [![](https://img.shields.io/badge/WINDOWS-XP%20%E2%80%93%2011-blue?style=for-the-badge)](#windows-memory-cleaner) [![](https://img.shields.io/badge/SERVER-2003%20%E2%80%93%202025-blue?style=for-the-badge)](#windows-memory-cleaner) [![](https://img.shields.io/github/license/IgorMundstein/WinMemoryCleaner?color=2ea44f&style=for-the-badge)](/LICENSE) [![](https://img.shields.io/github/downloads/IgorMundstein/WinMemoryCleaner/total?color=orange&style=for-the-badge)](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest)
@@ -7,6 +14,7 @@ WMC is a free RAM cleaner that effectively optimizes memory areas by utilizing t
 [![](./docs/assets/images/main-window.png)](#windows-memory-cleaner)
 
 ## 💾 Download
+> **Community note**: this community repository publishes **no releases**. The badge and package-manager links below point to the **official upstream** distribution by Igor Mundstein; community binaries must be built from source (see *Build from source* below).
 
 [![](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2FIgorMundstein%2FWinMemoryCleaner%2Freleases%2Flatest&query=%24.tag_name&label=Release&style=for-the-badge)](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest/download/WinMemoryCleaner.exe)
 
@@ -31,6 +39,20 @@ scoop install extras/winmemorycleaner
 ```cmd
 winget install IgorMundstein.WinMemoryCleaner
 ```
+
+### 🛠️ Build from source (community)
+
+This community build stays on **.NET Framework 4.0 / WPF**, so a full Visual Studio install is not required:
+
+```powershell
+# production binary only (no tests, no NUnit dependency)
+powershell -ExecutionPolicy Bypass -File .\build-community.ps1
+
+# production + isolated test build + safe test suite (excludes Manual/Desktop) + dist packaging
+powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -Package
+```
+
+Or plain MSBuild: `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe src\WinMemoryCleaner.csproj /t:Rebuild /p:Configuration=Release`. NuGet packages are restored from `src\packages.config` into `src\packages`.
 
 ## 🚀 Features
 
@@ -123,6 +145,7 @@ Don't take our word for it. You can verify the effects of this tool using Window
 This is a direct, verifiable demonstration that the application converts cached memory into truly free memory, ready for your next task.
 
 ## 🔒 Trust & Integrity
+> **Community note**: the CI/CD signing pipeline and SignPath certificate described in this section belong to the **upstream** project. Community continuation builds are **unsigned** — verify the SHA-256 hash or build from source yourself.
 
 We understand that users are rightfully skeptical of system utilities. This project is built on a foundation of verifiable trust and transparency.
 
@@ -362,7 +385,7 @@ This project exists to serve the users who were left behind by the march of tech
 
 ### 💭 Where does the app save the settings?
 
-They are saved in the Windows registry path `Computer\HKEY_LOCAL_MACHINE\Software\WinMemoryCleaner`
+Upstream saves them in the Windows registry path `Computer\HKEY_LOCAL_MACHINE\Software\WinMemoryCleaner`. This community build uses its own independent path `Computer\HKEY_LOCAL_MACHINE\Software\WinMemoryCleaner.Community` and never reads, migrates, or overwrites the upstream settings.
 
 ### 💭 Why has the app been flagged as Malware/Virus and blocked by Windows Defender, SmartScreen, or Antivirus?
 
@@ -416,6 +439,7 @@ When new versions require translation updates, we may use AI tools to provide a 
 | 🇮🇹&nbsp;Italian | [Michele](https://github.com/wintrymichi) | 🇺🇦&nbsp;Ukrainian | [Riebi](https://github.com/RieBi), [Oleksandr](https://github.com/Mariachi1231) |
 
 ## ❤️ Contribute to the Project
+> **Community note**: the links below belong to the **original author, Igor Mundstein**. This community continuation adds no donation channel of its own; the maintainers receive nothing from them.
 
 In the past, I faced challenges with the proper hardware and software needed to fully enjoy technology and gaming. It was a constant battle to squeeze every last drop of performance out of a limited machine.
 

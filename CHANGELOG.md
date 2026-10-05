@@ -1,3 +1,16 @@
+### 3.0.8-community.1
+
+**2026-10-05 (unofficial community continuation, not an upstream release)**
+
+Baseline: PR [#204](https://github.com/IgorMundstein/WinMemoryCleaner/pull/204) (tray-notification AB-BA deadlock, monitor busy-wait, icon-render serialization) on top of upstream 3.0.8. Upstream items adopted via `cherry-pick -x`: [#205](https://github.com/IgorMundstein/WinMemoryCleaner/pull/205), [#206](https://github.com/IgorMundstein/WinMemoryCleaner/pull/206), [#207](https://github.com/IgorMundstein/WinMemoryCleaner/pull/207), [#208](https://github.com/IgorMundstein/WinMemoryCleaner/pull/208), [#209](https://github.com/IgorMundstein/WinMemoryCleaner/pull/209), [#188](https://github.com/IgorMundstein/WinMemoryCleaner/pull/188), [#186](https://github.com/IgorMundstein/WinMemoryCleaner/pull/186); two GCHandle fixes selected from [#195](https://github.com/IgorMundstein/WinMemoryCleaner/pull/195). Status of every open issue/PR: [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md).
+
+- Community identity: `WinMemoryCleaner.Community.exe`, independent settings key `HKLM\SOFTWARE\WinMemoryCleaner.Community`, unsigned, auto-update off until a verified community channel exists; upstream settings are never read or migrated
+- Fixed startup scheduled-task XML: UTF-16 bytes now match the declared encoding, values are XML-escaped, dates are culture-invariant, and the temp file is deleted in `finally` ([#179](https://github.com/IgorMundstein/WinMemoryCleaner/issues/179))
+- Fixed update check gating: unsupported platform / disabled setting / interval-not-elapsed now skip the check entirely; TLS 1.3 flag removed (issue [#174](https://github.com/IgorMundstein/WinMemoryCleaner/issues/174))
+- Completed Serbian (Latin) translation keys added by #208 ([#186](https://github.com/IgorMundstein/WinMemoryCleaner/pull/186) × [#208](https://github.com/IgorMundstein/WinMemoryCleaner/pull/208) integration)
+- Added compile-time isolated test build (`CommunityTestBuild=true`) that never touches real settings, scheduled tasks, or event log; default run excludes `Manual`/`Desktop` categories
+- Added `build-community.ps1` (build / test / package) and a non-publishing CI workflow; upstream signing, release, and package-manager workflows are parked under `.github/workflows-disabled/`
+
 ### 3.0.8
 
 **2025-12-13**
