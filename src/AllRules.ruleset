@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RuleSet Name="Community code analysis" Description="Retain upstream analyzer coverage without relying on a Visual Studio installation's rule-set path." ToolsVersion="16.0">
+  <IncludeAll Action="Warning" />
+</RuleSet>

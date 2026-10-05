@@ -28,6 +28,9 @@ namespace WinMemoryCleaner
         /// </summary>
         static Logger()
         {
+            if (App.IsTestBuild)
+                return;
+
             try
             {
                 Trace.AutoFlush = true;
@@ -251,6 +254,9 @@ namespace WinMemoryCleaner
         /// <param name="type">Type</param>
         private static void Event(string message, EventLogEntryType type = EventLogEntryType.Information)
         {
+            if (App.IsTestBuild)
+                return;
+
             try
             {
                 EventLog.WriteEntry(Constants.App.Title, message, type);

@@ -1,6 +1,6 @@
 ﻿using System;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning disable 1591 // Missing XML comment for publicly visible type or member
 
 namespace WinMemoryCleaner
 {
@@ -15,33 +15,28 @@ namespace WinMemoryCleaner
             public const int AutoUpdateInterval = 24; // Hour
             public const string EmbeddedResourcePath = "WinMemoryCleaner.Resources.";
             public const string EmbeddedResourcePathExtension = ".json";
-            public const string Id = "C7F29A45-8B3E-4D2F-9A1C-5E7B2D4F8C6A";
-            public const string KeyFile = "WinMemoryCleaner.snk";
+            public const string Id = "58C54AB4-CACF-4F58-BF95-21B021D41C7D";
             public const string License = "GPL-3.0";
             public const string LocalizationResourcePath = EmbeddedResourcePath + "Localization.";
-            public const string Name = "WinMemoryCleaner";
-            public const string Shortcut = "Windows Memory Cleaner.lnk";
+            public const string Name = "WinMemoryCleaner.Community";
+            public const string Shortcut = "WinMemoryCleaner Community.lnk";
             public const string ThemesResourcePath = EmbeddedResourcePath + "Themes.";
-            public const string Title = "Windows Memory Cleaner";
+            public const string Title = "WinMemoryCleaner Community";
             public const string VersionFormat = "{0}.{1}.{2}";
+            public const string Attribution = "Based on Windows Memory Cleaner by Igor Mundstein. Unofficial community continuation; not an endorsed successor.";
 
             public static class Author
             {
                 public const string Name = "Igor Mundstein";
             }
 
-            public static class Certificate
+            public static class Maintainer
             {
-                public static class Release
-                {
-                    public const string Thumbprint = "9D201FB199626ABE7DA32FBE47013FC023670F9B";
-                }
-
-                public static class Test
-                {
-                    public const string Thumbprint = "2187092935C12F90727B29AD6913A7F89817B942";
-                }
+                public const string Name = "shabhui and community contributors";
             }
+
+            // Keep disabled until a community repository and a verified release channel exist.
+            public static readonly bool ReleaseChannelConfigured = false;
 
             public static class CommandLineArgument
             {
@@ -58,6 +53,7 @@ namespace WinMemoryCleaner
 
             public static class Donation
             {
+                public const string Attribution = "These links support the original author, Igor Mundstein, not the Community maintainers.";
                 public static readonly Uri BitcoinUri = new Uri("https://www.blockchain.com/explorer/addresses/btc/bc1qu884q5r2uqugvdhyk8l6waakumeve7jykqp7ap");
                 public static readonly Uri EthereumUri = new Uri("https://www.blockchain.com/explorer/addresses/eth/0xb71A94733B0578D155D9A765E0d2C4dA0f44156d");
                 public static readonly Uri GitHubSponsorUri = new Uri("https://github.com/sponsors/IgorMundstein");
@@ -68,21 +64,20 @@ namespace WinMemoryCleaner
             {
                 public static class Key
                 {
-                    public const string ProcessExclusionList = @"SOFTWARE\WinMemoryCleaner\ProcessExclusionList";
-                    public const string Settings = @"SOFTWARE\WinMemoryCleaner";
+                    public const string ProcessExclusionList = @"SOFTWARE\WinMemoryCleaner.Community\ProcessExclusionList";
+                    public const string Settings = @"SOFTWARE\WinMemoryCleaner.Community";
                 }
             }
 
             public static class Repository
             {
-                private const string GitHub = "https://github.com/IgorMundstein/WinMemoryCleaner";
-                private const string GitHubRaw = "https://raw.githubusercontent.com/IgorMundstein/WinMemoryCleaner/main";
-
-                public static readonly Uri AboutUri = new Uri(GitHub + "?tab=readme-ov-file#windows-memory-cleaner");
-                public static readonly Uri AssemblyInfoUri = new Uri(GitHubRaw + "/src/Properties/AssemblyInfo.cs");
-                public static readonly Uri DownloadUri = new Uri(GitHub + "?tab=readme-ov-file#-download");
-                public static readonly Uri LatestExeUri = new Uri(GitHub + "/releases/latest/download/WinMemoryCleaner.exe");
-                public static readonly Uri Uri = new Uri(GitHub);
+                // Local-only until a community repository and release channel are approved.
+                public static readonly Uri UpstreamUri = new Uri("https://github.com/IgorMundstein/WinMemoryCleaner");
+                public static readonly Uri AboutUri = new Uri(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "README.md"));
+                public static readonly Uri AssemblyInfoUri = null;
+                public static readonly Uri DownloadUri = AboutUri;
+                public static readonly Uri LatestExeUri = null;
+                public static readonly Uri Uri = AboutUri;
             }
         }
 
@@ -186,4 +181,4 @@ namespace WinMemoryCleaner
     }
 }
 
-#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning restore 1591 // Missing XML comment for publicly visible type or member

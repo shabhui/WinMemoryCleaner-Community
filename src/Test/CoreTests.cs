@@ -3,7 +3,7 @@ using System;
 using System.ComponentModel;
 using System.IO;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning disable 1591 // Missing XML comment for publicly visible type or member
 
 namespace WinMemoryCleaner.Test
 {
@@ -107,7 +107,7 @@ namespace WinMemoryCleaner.Test
             {
                 Assert.IsNotNull(Constants.App.Name);
                 Assert.IsFalse(string.IsNullOrEmpty(Constants.App.Name));
-                Assert.AreEqual("WinMemoryCleaner", Constants.App.Name);
+                Assert.AreEqual("WinMemoryCleaner.Community", Constants.App.Name);
             }
 
             [Test]
@@ -127,9 +127,8 @@ namespace WinMemoryCleaner.Test
             [Test]
             public void App_Repository_LatestExeUri_IsValid()
             {
-                Assert.IsNotNull(Constants.App.Repository.LatestExeUri);
-                Assert.IsTrue(Constants.App.Repository.LatestExeUri.IsAbsoluteUri);
-                Assert.IsTrue(Constants.App.Repository.LatestExeUri.ToString().Contains("releases/latest"));
+                Assert.IsNull(Constants.App.Repository.LatestExeUri);
+                Assert.IsFalse(Constants.App.ReleaseChannelConfigured);
             }
 
             [Test]
@@ -137,7 +136,7 @@ namespace WinMemoryCleaner.Test
             {
                 Assert.IsNotNull(Constants.App.Repository.Uri);
                 Assert.IsTrue(Constants.App.Repository.Uri.IsAbsoluteUri);
-                Assert.IsTrue(Constants.App.Repository.Uri.ToString().Contains("github.com"));
+                Assert.IsTrue(Constants.App.Repository.Uri.IsFile);
             }
 
             [Test]
@@ -145,7 +144,7 @@ namespace WinMemoryCleaner.Test
             {
                 Assert.IsNotNull(Constants.App.Title);
                 Assert.IsFalse(string.IsNullOrEmpty(Constants.App.Title));
-                Assert.AreEqual("Windows Memory Cleaner", Constants.App.Title);
+                Assert.AreEqual("WinMemoryCleaner Community", Constants.App.Title);
             }
 
             [Test]
@@ -1352,4 +1351,4 @@ namespace WinMemoryCleaner.Test
     }
 }
 
-#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning restore 1591 // Missing XML comment for publicly visible type or member

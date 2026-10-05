@@ -85,7 +85,8 @@ namespace WinMemoryCleaner
                 Computer.OperatingSystem = _computerService.OperatingSystem;
                 UseHotkey = Settings.UseHotkey;
 
-                MonitorAsync();
+                if (!App.IsTestBuild)
+                    MonitorAsync();
             }
         }
 

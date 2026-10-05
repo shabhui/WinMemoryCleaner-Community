@@ -3,7 +3,7 @@ using System;
 using System.Linq;
 using System.Windows.Forms;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning disable 1591 // Missing XML comment for publicly visible type or member
 
 namespace WinMemoryCleaner.Test
 {
@@ -13,6 +13,7 @@ namespace WinMemoryCleaner.Test
         #region MainViewModel Tests
 
 
+        [Category("Desktop")]
         public sealed class MainViewModelTests : IDisposable
         {
             private IComputerService _computerService;
@@ -658,6 +659,7 @@ namespace WinMemoryCleaner.Test
         #region MessageViewModel Tests
 
 
+        [Category("Desktop")]
         public sealed class MessageViewModelTests : IDisposable
         {
             private INotificationService _notificationService;
@@ -749,6 +751,7 @@ namespace WinMemoryCleaner.Test
         #region DonationViewModel Tests
 
 
+        [Category("Desktop")]
         public sealed class DonationViewModelTests : IDisposable
         {
             private INotificationService _notificationService;
@@ -789,4 +792,4 @@ namespace WinMemoryCleaner.Test
     }
 }
 
-#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning restore 1591 // Missing XML comment for publicly visible type or member

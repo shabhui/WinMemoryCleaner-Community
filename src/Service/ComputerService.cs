@@ -470,7 +470,8 @@ namespace WinMemoryCleaner
             if (!SetIncreasePrivilege(Constants.Windows.Privilege.SeProfSingleProcessName))
                 throw new Exception(string.Format(Localizer.Culture, Localizer.String.ErrorAdminPrivilegeRequired, Constants.Windows.Privilege.SeProfSingleProcessName));
 
-            var handle = GCHandle.Alloc(0);
+            // PR #195 (Y-ASLant): do not leak a dummy handle before allocating the pinned one.
+            var handle = default(GCHandle);
 
             try
             {
@@ -677,7 +678,8 @@ namespace WinMemoryCleaner
             if (!SetIncreasePrivilege(Constants.Windows.Privilege.SeIncreaseQuotaName))
                 throw new Exception(string.Format(Localizer.Culture, Localizer.String.ErrorAdminPrivilegeRequired, Constants.Windows.Privilege.SeIncreaseQuotaName));
 
-            var handle = GCHandle.Alloc(0);
+            // PR #195 (Y-ASLant): no allocation until the buffer is ready to pin.
+            var handle = default(GCHandle);
 
             try
             {

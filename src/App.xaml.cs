@@ -86,6 +86,19 @@ namespace WinMemoryCleaner
             }
         }
 
+        // Compile-time test isolation; this cannot be enabled by a release setting or argument.
+        internal static bool IsTestBuild
+        {
+            get
+            {
+#if COMMUNITY_TESTS
+                return true;
+#else
+                return false;
+#endif
+            }
+        }
+
         /// <summary>
         /// App path
         /// </summary>
@@ -395,6 +408,12 @@ namespace WinMemoryCleaner
         /// <param name="startupEvent">The <see cref="StartupEventArgs" /> instance containing the event data.</param>
         protected override void OnStartup(StartupEventArgs startupEvent)
         {
+            if (IsTestBuild)
+            {
+                base.Shutdown();
+                return;
+            }
+
             var startupType = Enums.StartupType.App;
 
             try
@@ -641,79 +660,36 @@ namespace WinMemoryCleaner
             }
         }
 
+        internal static void WriteStartupTaskXml(string filePath, string taskXml)
+        {
+            // Upstream issue #179: the XML declaration is UTF-16, so bytes must match it.
+            File.WriteAllText(filePath, taskXml, System.Text.Encoding.Unicode);
+        }
+
         /// <summary>
         /// Runs the app on startup
         /// </summary>
         /// <param name="enable">if set to <c>true</c> [enable].</param>
         public static void RunOnStartup(bool enable)
         {
+            if (IsTestBuild)
+                return;
+
             try
             {
                 if (enable)
                 {
                     var isTaskCreated = false;
+                    string tempXmlFile = null;
 
                     try
                     {
-                        var taskXml = string.Format
-                            (
-                                CultureInfo.InvariantCulture,
-                                @"<?xml version=""1.0"" encoding=""UTF-16""?>
-                                <Task version=""1.2""
-	                                xmlns=""http://schemas.microsoft.com/windows/2004/02/mit/task"">
-	                                <RegistrationInfo>
-		                                <Author>{3}</Author>
-		                                <Description>Runs {0} at logon.</Description>
-		                                <Date>{4}</Date>
-	                                </RegistrationInfo>
-	                                <Triggers>
-		                                <LogonTrigger>
-			                                <Enabled>true</Enabled>
-		                                </LogonTrigger>
-	                                </Triggers>
-	                                <Principals>
-		                                <Principal id=""Author"">
-			                                <UserId>{2}</UserId>
-			                                <LogonType>InteractiveToken</LogonType>
-			                                <RunLevel>HighestAvailable</RunLevel>
-		                                </Principal>
-	                                </Principals>
-	                                <Settings>
-		                                <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
-		                                <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-		                                <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
-		                                <AllowHardTerminate>true</AllowHardTerminate>
-		                                <StartWhenAvailable>true</StartWhenAvailable>
-		                                <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
-		                                <IdleSettings>
-			                                <WaitTimeout>PT10M</WaitTimeout>
-			                                <StopOnIdleEnd>false</StopOnIdleEnd>
-			                                <RestartOnIdle>false</RestartOnIdle>
-		                                </IdleSettings>
-		                                <AllowStartOnDemand>true</AllowStartOnDemand>
-		                                <Enabled>true</Enabled>
-		                                <Hidden>false</Hidden>
-		                                <RunOnlyIfIdle>false</RunOnlyIfIdle>
-		                                <WakeToRun>false</WakeToRun>
-		                                <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
-		                                <Priority>7</Priority>
-	                                </Settings>
-	                                <Actions Context=""Author"">
-		                                <Exec>
-			                                <Command>""{1}""</Command>
-		                                </Exec>
-	                                </Actions>
-                                </Task>",
-                                Constants.App.Title,
-                                Path,
-                                WindowsIdentity.GetCurrent().User.Value,
-                                string.Format(CultureInfo.InvariantCulture, "WMC {0} ({1})", string.Format(Localizer.Culture, Constants.App.VersionFormat, Version.Major, Version.Minor, Version.Build), Environment.UserName),
-                                DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)
-                            );
+                        var taskXml = StartupTask.CreateXml(Constants.App.Title, Path,
+                            WindowsIdentity.GetCurrent().User.Value, Environment.UserName, DateTime.Now);
 
-                                var tempXmlFile = System.IO.Path.GetTempFileName();
+                        tempXmlFile = System.IO.Path.GetTempFileName();
 
-                        File.WriteAllText(tempXmlFile, taskXml);
+                        WriteStartupTaskXml(tempXmlFile, taskXml);
 
                         var createStartInfo = new ProcessStartInfo("schtasks")
                         {
@@ -734,12 +710,15 @@ namespace WinMemoryCleaner
                             else
                                 Logger.Error(string.Format(Localizer.Culture, "XML task creation failed (will attempt fallback). Error: {0}", errorMessage));
                         }
-
-                        Helper.DeleteFile(tempXmlFile);
                     }
                     catch (Exception ex)
                     {
                         Logger.Error(string.Format(Localizer.Culture, "An exception occurred during XML task creation (will attempt fallback): {0}", ex.GetMessage()));
+                    }
+                    finally
+                    {
+                        if (tempXmlFile != null)
+                            Helper.DeleteFile(tempXmlFile);
                     }
 
                     if (!isTaskCreated)
@@ -792,6 +771,9 @@ namespace WinMemoryCleaner
         /// </summary>
         public static void SetPriority(Enums.Priority priority)
         {
+            if (IsTestBuild)
+                return;
+
             bool priorityBoostEnabled;
             ProcessPriorityClass processPriorityClass;
             ThreadPriority threadPriority;

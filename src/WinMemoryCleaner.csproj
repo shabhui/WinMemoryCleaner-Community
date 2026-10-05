@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props" Condition="Exists('packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props')" />
-  <Import Project="packages\Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.props" Condition="Exists('packages\Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.props')" />
-  <Import Project="packages\Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.props" Condition="Exists('packages\Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.props')" />
-  <Import Project="packages\Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.props" Condition="Exists('packages\Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.props')" />
-  <Import Project="packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.props" Condition="Exists('packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.props')" />
+  <Import Project="packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props')" />
+  <Import Project="packages\Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.props')" />
+  <Import Project="packages\Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.props')" />
+  <Import Project="packages\Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.props')" />
+  <Import Project="packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.props')" />
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -12,8 +12,10 @@
     <ProjectGuid>{D1FE3A0A-FD12-42A0-AD98-16B9D3F4E14E}</ProjectGuid>
     <OutputType>WinExe</OutputType>
     <RootNamespace>WinMemoryCleaner</RootNamespace>
-    <AssemblyName>WinMemoryCleaner</AssemblyName>
+    <AssemblyName>WinMemoryCleaner.Community</AssemblyName>
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <TargetFrameworkRootPath>$(MSBuildProjectDirectory)\packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\</TargetFrameworkRootPath>
+    <CommunityTestBuild Condition=" '$(CommunityTestBuild)' == '' ">false</CommunityTestBuild>
     <FileAlignment>512</FileAlignment>
     <ProjectTypeGuids>{60dc8134-eba5-43b8-bcc9-bb4bc16c2548};{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}</ProjectTypeGuids>
     <WarningLevel>4</WarningLevel>
@@ -51,8 +53,7 @@
     <RunCodeAnalysis>false</RunCodeAnalysis>
     <CodeAnalysisIgnoreGeneratedCode>true</CodeAnalysisIgnoreGeneratedCode>
     <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
-    <NoWarn>
-    </NoWarn>
+    <NoWarn>3001;3003</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -67,7 +68,13 @@
     <DocumentationFile>bin\Release\WinMemoryCleaner.xml</DocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
-    <NoWarn>CS3001, CS3003</NoWarn>
+    <NoWarn>3001;3003</NoWarn>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(CommunityTestBuild)' == 'true' ">
+    <DefineConstants>$(DefineConstants);COMMUNITY_TESTS</DefineConstants>
+    <OutputPath>bin\Test\</OutputPath>
+    <IntermediateOutputPath>obj\Test\</IntermediateOutputPath>
+    <DocumentationFile>bin\Test\WinMemoryCleaner.Community.xml</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationIcon>Resources\Images\win-memory-cleaner.ico</ApplicationIcon>
@@ -76,10 +83,7 @@
     <StartupObject>WinMemoryCleaner.App</StartupObject>
   </PropertyGroup>
   <PropertyGroup>
-    <SignAssembly>true</SignAssembly>
-  </PropertyGroup>
-  <PropertyGroup>
-    <AssemblyOriginatorKeyFile>WinMemoryCleaner.snk</AssemblyOriginatorKeyFile>
+    <SignAssembly>false</SignAssembly>
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -131,6 +135,7 @@
     <Compile Include="Core\ObservableObject.cs" />
     <Compile Include="Core\OptimizationTiming.cs" />
     <Compile Include="Core\Settings.cs" />
+    <Compile Include="Core\StartupTask.cs" />
     <Compile Include="Core\Structs.cs" />
     <Compile Include="Core\ThemeManager.cs" />
     <Compile Include="Core\Updater.cs" />
@@ -160,18 +165,6 @@
     <Compile Include="Service\ComputerService.cs" />
     <Compile Include="Service\HotkeyService.cs" />
     <Compile Include="Service\NotificationService.cs" />
-    <Compile Include="Test\AutoOptimizationPolicyTests.cs" />
-    <Compile Include="Test\CommandTests.cs" />
-    <Compile Include="Test\ConverterTests.cs" />
-    <Compile Include="Test\CoreTests.cs" />
-    <Compile Include="Test\IntegrationTests.cs" />
-    <Compile Include="Test\Mocker.cs" />
-    <Compile Include="Test\NativeMemoryInteropTests.cs" />
-    <Compile Include="Test\ReleaseMemoryTests.cs" />
-    <Compile Include="Test\ModelTests.cs" />
-    <Compile Include="Test\ServiceTests.cs" />
-    <Compile Include="Test\TestCleanup.cs" />
-    <Compile Include="Test\ViewModelTests.cs" />
     <Compile Include="View\Base\View.cs" />
     <Compile Include="View\Control\TrayIconContextMenuControl.cs">
       <SubType>Component</SubType>
@@ -197,6 +190,16 @@
     <Compile Include="WindowsService\WinServiceInstaller.cs">
       <SubType>Component</SubType>
     </Compile>
+  </ItemGroup>
+  <!-- Tests are built separately; the portable release has no NUnit dependency. -->
+  <ItemGroup Condition=" '$(CommunityTestBuild)' == 'true' ">
+    <Compile Include="Test\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\README.md">
+      <Link>README.md</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs">
@@ -239,7 +242,6 @@
     <None Include="nuget.config" />
     <None Include="packages.config" />
     <None Include="packages.lock.json" />
-    <None Include="WinMemoryCleaner.snk" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="PresentationCore" />
@@ -254,7 +256,7 @@
     <Reference Include="System.Xaml" />
     <Reference Include="System.Xml" />
     <Reference Include="WindowsBase" />
-    <Reference Include="nunit.framework, Version=2.6.4.14350, Culture=neutral, PublicKeyToken=96d09a1eb7f44a77, processorArchitecture=MSIL">
+    <Reference Include="nunit.framework, Version=2.6.4.14350, Culture=neutral, PublicKeyToken=96d09a1eb7f44a77, processorArchitecture=MSIL" Condition=" '$(CommunityTestBuild)' == 'true' ">
       <HintPath>packages\NUnit.2.6.4\lib\nunit.framework.dll</HintPath>
     </Reference>
   </ItemGroup>
@@ -280,10 +282,6 @@
     <Analyzer Include="packages\Microsoft.NetFramework.Analyzers.3.3.2\analyzers\dotnet\cs\Microsoft.NetFramework.CSharp.Analyzers.dll" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <Target Name="CleanBinAndObjFolders" AfterTargets="Clean">
-    <RemoveDir Directories="$(TargetDir)" />
-    <RemoveDir Directories="$(ProjectDir)$(BaseIntermediateOutputPath)" />
-  </Target>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
@@ -300,52 +298,10 @@
     <Error Condition="!Exists('packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.targets'))" />
     <Error Condition="!Exists('packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net40.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net40.targets'))" />
   </Target>
-  <Import Project="packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.targets" Condition="Exists('packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.targets')" />
-  <Import Project="packages\Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.targets" Condition="Exists('packages\Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.targets')" />
-  <Import Project="packages\Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.targets" Condition="Exists('packages\Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.targets')" />
-  <Import Project="packages\Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.targets" Condition="Exists('packages\Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.targets')" />
-  <Import Project="packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.targets" Condition="Exists('packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.targets')" />
-  <Import Project="packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net40.targets" Condition="Exists('packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net40.targets')" />
-  <PropertyGroup>
-    <IsCI Condition=" '$(CI)' == 'true' ">true</IsCI>
-    <IsCI Condition=" '$(IsCI)' == '' ">false</IsCI>
-    <ProgramFilesX86>$([System.Environment]::GetEnvironmentVariable('ProgramFiles(x86)'))</ProgramFilesX86>
-    <NetFramework40RootDir>$(ProgramFilesX86)\Reference Assemblies\Microsoft\Framework\.NETFramework</NetFramework40RootDir>
-    <NetFramework40ReferenceDir>$(NetFramework40RootDir)\v4.0</NetFramework40ReferenceDir>
-    <NetFramework40NuGetDir>$(SolutionDir)packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\.NETFramework\v4.0</NetFramework40NuGetDir>
-    <NetFramework40FlagFile>$(NetFramework40ReferenceDir)\.net40_reference_installed.flag</NetFramework40FlagFile>
-    <RestartFlag>$(NetFramework40ReferenceDir)\.net40_restart_required.flag</RestartFlag>
-  </PropertyGroup>
-  <Target Name="CheckAdministrator" BeforeTargets="BeforeBuild" Condition=" '$(IsCI)' != 'true' ">
-    <Exec Command="cmd /c echo test &gt; %windir%\temp\admin_check.txt" ContinueOnError="true">
-      <Output TaskParameter="ExitCode" PropertyName="AdminCheckExitCode" />
-    </Exec>
-    <Exec Condition="'$(AdminCheckExitCode)' == '0'" Command="cmd /c del %windir%\temp\admin_check.txt" />
-    <Error Condition="'$(AdminCheckExitCode)' != '0'" Text="WinMemoryCleaner must be built as administrator. Restart Visual Studio as Administrator." />
-  </Target>
-  <Target Name="EnsureNet40ReferenceAssemblies" BeforeTargets="Build" DependsOnTargets="Restore" Condition=" '$(IsCI)' != 'true' ">
-    <PropertyGroup>
-      <_Net40JustInstalled>false</_Net40JustInstalled>
-    </PropertyGroup>
-    <MakeDir Condition="Exists('$(NetFramework40NuGetDir)\mscorlib.dll') AND !Exists('$(NetFramework40FlagFile)') AND !Exists('$(NetFramework40ReferenceDir)')" Directories="$(NetFramework40ReferenceDir)">
-      <Output TaskParameter="DirectoriesCreated" ItemName="CreatedDirs" />
-    </MakeDir>
-    <Exec Condition="Exists('$(NetFramework40NuGetDir)\mscorlib.dll') AND !Exists('$(NetFramework40FlagFile)')" Command="xcopy /E /I /Y /V /F &quot;$(NetFramework40NuGetDir)\*.*&quot; &quot;$(NetFramework40ReferenceDir)\&quot;">
-      <Output TaskParameter="ExitCode" PropertyName="XCopyExitCode" />
-    </Exec>
-    <PropertyGroup Condition="Exists('$(NetFramework40NuGetDir)\mscorlib.dll') AND !Exists('$(NetFramework40FlagFile)')">
-      <_Net40JustInstalled>true</_Net40JustInstalled>
-    </PropertyGroup>
-    <WriteLinesToFile Condition="'$(_Net40JustInstalled)' == 'true'" File="$(NetFramework40FlagFile)" Lines="Installed" />
-    <WriteLinesToFile Condition="'$(_Net40JustInstalled)' == 'true'" File="$(RestartFlag)" Lines="Restart required" Overwrite="true" />
-  </Target>
-  <Target Name="RequireRestartAfterCopy" BeforeTargets="Build" Condition="Exists('$(RestartFlag)') and '$(IsCI)' != 'true' ">
-    <Warning Text="The .NET Framework 4.0 reference assemblies were just installed. Please close and restart Visual Studio to load XAML properly, then rebuild. Build stopped intentionally." />
-  </Target>
-  <Target Name="CleanupRestartFlag" BeforeTargets="BeforeBuild" Condition="Exists('$(RestartFlag)')">
-    <Delete Files="$(RestartFlag)" />
-  </Target>
-  <ItemGroup>
-    <Reference Remove="Microsoft.VisualBasic" />
-  </ItemGroup>
+  <Import Project="packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.targets" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.targets')" />
+  <Import Project="packages\Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.targets" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.targets')" />
+  <Import Project="packages\Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.targets" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.targets')" />
+  <Import Project="packages\Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.targets" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.targets')" />
+  <Import Project="packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.targets" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.targets')" />
+  <Import Project="packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net40.targets" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\Microsoft.NETFramework.ReferenceAssemblies.net40.targets')" />
 </Project>

@@ -30,6 +30,8 @@ bld/
 [Bb]in/
 [Oo]bj/
 [Ll]og/
+# Community local packaging output
+dist/
 [Ll]ogs/
 
 # Visual Studio 2015/2017 cache/options directory

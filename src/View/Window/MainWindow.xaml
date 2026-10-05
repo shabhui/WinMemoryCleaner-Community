@@ -11,7 +11,7 @@
             FocusManager.FocusedElement="{Binding ElementName=Optimize}"
             FontSize="{Binding FontSize}"
             Foreground="{DynamicResource SecondaryForeground}"
-            Icon="/WinMemoryCleaner;component/Resources/Images/win-memory-cleaner.ico"
+            Icon="/WinMemoryCleaner.Community;component/Resources/Images/win-memory-cleaner.ico"
             MouseDown="OnWindowMouseDown"
             Height="700"
             MinHeight="440"
@@ -50,7 +50,8 @@
                             VerticalAlignment="Center">
                     <Image RenderOptions.BitmapScalingMode="Fant"
                            RenderOptions.EdgeMode="Aliased"
-                           Source="/WinMemoryCleaner;component/Resources/Images/win-memory-cleaner.ico"
+                           Source="/WinMemoryCleaner.Community;component/Resources/Images/win-memory-cleaner.ico"
+                           ToolTip="{x:Static local:Constants+App.Attribution}"
                            VerticalAlignment="Center" />
                     <TextBlock FontWeight="Normal"
                                Margin="5, 0, 0, 0"

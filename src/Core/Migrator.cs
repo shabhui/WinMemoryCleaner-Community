@@ -14,6 +14,9 @@ namespace WinMemoryCleaner
         /// </summary>  
         public static void Run()
         {
+            if (App.IsTestBuild)
+                return;
+
             // 2.9+  
             if (App.Version >= new Version(2, 9))
             {

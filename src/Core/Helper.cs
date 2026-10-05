@@ -207,6 +207,14 @@ namespace WinMemoryCleaner
         {
             get
             {
+                if (!Constants.App.ReleaseChannelConfigured || App.IsTestBuild ||
+                    Constants.App.Repository.AssemblyInfoUri == null || Constants.App.Repository.LatestExeUri == null)
+                    return false;
+
+                if (Constants.App.Repository.AssemblyInfoUri.Scheme != Uri.UriSchemeHttps ||
+                    Constants.App.Repository.LatestExeUri.Scheme != Uri.UriSchemeHttps)
+                    return false;
+
                 try
                 {
                     var os = Environment.OSVersion;
@@ -277,6 +285,9 @@ namespace WinMemoryCleaner
         /// <param name="create">If true, creates the shortcut; if false, deletes it.</param>
         public static void StartMenuShortcut(bool create)
         {
+            if (App.IsTestBuild)
+                return;
+
             try
             {
                 var shortcutPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), Constants.App.Shortcut);

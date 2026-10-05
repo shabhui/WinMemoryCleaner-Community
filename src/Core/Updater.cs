@@ -125,6 +125,11 @@ namespace WinMemoryCleaner
             }
         }
 
+        internal static bool ShouldCheckForUpdates(bool supported, bool enabled, DateTimeOffset now, DateTimeOffset lastCheck)
+        {
+            return supported && enabled && now.Subtract(lastCheck).TotalHours >= Constants.App.AutoUpdateInterval;
+        }
+
         /// <summary>
         /// Check for new version and update if available
         /// </summary>
@@ -132,7 +137,7 @@ namespace WinMemoryCleaner
         {
             try
             {
-                if (Settings.AutoUpdate && DateTimeOffset.Now.Subtract(_lastCheck).TotalHours < Constants.App.AutoUpdateInterval)
+                if (!ShouldCheckForUpdates(Helper.IsAutoUpdateSupported, Settings.AutoUpdate, DateTimeOffset.Now, _lastCheck))
                     return;
 
                 _lastCheck = DateTimeOffset.Now;
@@ -145,7 +150,7 @@ namespace WinMemoryCleaner
 
                 ServicePointManager.DefaultConnectionLimit = 10;
                 ServicePointManager.Expect100Continue = true;
-                ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072 | (SecurityProtocolType)12288; // TLS 1.2 | TLS 1.3
+                ServicePointManager.SecurityProtocol |= (SecurityProtocolType)3072; // TLS 1.2; legacy Framework does not support the TLS 1.3 flag.
 
                 _client.DownloadStringAsync(Constants.App.Repository.AssemblyInfoUri, args);
             }

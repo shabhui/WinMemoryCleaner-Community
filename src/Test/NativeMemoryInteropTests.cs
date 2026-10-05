@@ -1,6 +1,6 @@
 using NUnit.Framework;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning disable 1591 // Missing XML comment for publicly visible type or member
 
 namespace WinMemoryCleaner.NativeMemoryTests
 {
@@ -65,4 +65,4 @@ namespace WinMemoryCleaner.NativeMemoryTests
     }
 }
 
-#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning restore 1591 // Missing XML comment for publicly visible type or member

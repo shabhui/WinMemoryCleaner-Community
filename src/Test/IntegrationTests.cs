@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows.Input;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning disable 1591 // Missing XML comment for publicly visible type or member
 
 namespace WinMemoryCleaner.Test
 {
@@ -19,6 +19,7 @@ namespace WinMemoryCleaner.Test
 
         
         [TestFixture]
+        [Category("Manual")]
         public class MemoryOptimizationIntegrationTests
         {
             [Test]
@@ -341,6 +342,7 @@ namespace WinMemoryCleaner.Test
 
         
         [TestFixture]
+        [Category("Manual")]
         public class PriorityIntegrationTests
         {
             [Test]
@@ -601,6 +603,7 @@ namespace WinMemoryCleaner.Test
         public class CompleteWorkflowIntegrationTests
         {
             [Test]
+            [Category("Manual")]
             public void CompleteWorkflow_ConfigureAndOptimize_CompletesSuccessfully()
             {
                 var originalMemoryAreas = Settings.MemoryAreas;
@@ -671,4 +674,4 @@ namespace WinMemoryCleaner.Test
     }
 }
 
-#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning restore 1591 // Missing XML comment for publicly visible type or member

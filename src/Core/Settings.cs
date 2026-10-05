@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Linq;
 using System.Windows.Input;
 
-#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning disable 1591 // Missing XML comment for publicly visible type or member
 
 namespace WinMemoryCleaner
 {
@@ -96,7 +96,7 @@ namespace WinMemoryCleaner
             AlwaysOnTop = false;
             AutoOptimizationInterval = 0;
             AutoOptimizationMemoryUsage = 0;
-            AutoUpdate = true;
+            AutoUpdate = false;
             CloseAfterOptimization = false;
             CloseToTheNotificationArea = false;
             CompactMode = false;
@@ -127,7 +127,7 @@ namespace WinMemoryCleaner
             // User values
             try
             {
-                if (!loadUserValues)
+                if (!loadUserValues || App.IsTestBuild)
                     return;
 
                 // Process Exclusion List
@@ -148,7 +148,7 @@ namespace WinMemoryCleaner
                         AlwaysOnTop = Convert.ToBoolean(key.GetValue(Helper.NameOf(() => AlwaysOnTop), AlwaysOnTop), _culture);
                         AutoOptimizationInterval = Convert.ToInt32(key.GetValue(Helper.NameOf(() => AutoOptimizationInterval), AutoOptimizationInterval), _culture);
                         AutoOptimizationMemoryUsage = Convert.ToInt32(key.GetValue(Helper.NameOf(() => AutoOptimizationMemoryUsage), AutoOptimizationMemoryUsage), _culture);
-                        AutoUpdate = Convert.ToBoolean(key.GetValue(Helper.NameOf(() => AutoUpdate), AutoUpdate), _culture);
+                        AutoUpdate = Helper.IsAutoUpdateSupported && Convert.ToBoolean(key.GetValue(Helper.NameOf(() => AutoUpdate), AutoUpdate), _culture);
                         CloseAfterOptimization = Convert.ToBoolean(key.GetValue(Helper.NameOf(() => CloseAfterOptimization), CloseAfterOptimization), _culture);
                         CloseToTheNotificationArea = Convert.ToBoolean(key.GetValue(Helper.NameOf(() => CloseToTheNotificationArea), CloseToTheNotificationArea), _culture);
                         CompactMode = Convert.ToBoolean(key.GetValue(Helper.NameOf(() => CompactMode), CompactMode), _culture);
@@ -238,6 +238,9 @@ namespace WinMemoryCleaner
 
         public static void Save()
         {
+            if (App.IsTestBuild)
+                return;
+
             try
             {
                 // Process Exclusion List
@@ -302,4 +305,4 @@ namespace WinMemoryCleaner
     }
 }
 
-#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+#pragma warning restore 1591 // Missing XML comment for publicly visible type or member
