@@ -37,7 +37,7 @@ jobs:
         shell: pwsh
         run: |
           $nuget = Join-Path $env:RUNNER_TEMP 'nuget.exe'
-          Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/v6/nuget.exe' -OutFile $nuget
+          Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile $nuget
           & $nuget restore (Join-Path 'src' 'packages.config') -PackagesDirectory (Join-Path 'src' 'packages') -NonInteractive
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
