@@ -109,8 +109,13 @@ namespace WinMemoryCleaner.CommunityTests
                 var bytes = File.ReadAllBytes(file);
                 Assert.AreEqual(0xff, bytes[0], "UTF-16 LE BOM is required.");
                 Assert.AreEqual(0xfe, bytes[1]);
-                var doc = new XmlDocument();
-                doc.Load(file);
+                var settings = new XmlReaderSettings { XmlResolver = null, DtdProcessing = DtdProcessing.Prohibit };
+                XmlDocument doc;
+                using (var reader = XmlReader.Create(file, settings))
+                {
+                    doc = new XmlDocument { XmlResolver = null };
+                    doc.Load(reader);
+                }
                 var ns = new XmlNamespaceManager(doc.NameTable);
                 ns.AddNamespace("t", "http://schemas.microsoft.com/windows/2004/02/mit/task");
                 Assert.AreEqual("\"" + executablePath + "\"", doc.SelectSingleNode("/t:Task/t:Actions/t:Exec/t:Command", ns).InnerText);
