@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -19,8 +19,57 @@ namespace WinMemoryCleaner
 
         internal static ProcessStartInfo Process;
 
+        /// <summary>
+        /// Installs the downloaded file, but only when it matches the announced version.
+        /// </summary>
+        /// <param name="updateInfo">The update state (temp file, target path, exe name, version, arguments).</param>
+        private static void CompleteUpdate(Tuple<string, string, string, Version, string[]> updateInfo)
+        {
+            var temp = updateInfo.Item1;
+            var path = updateInfo.Item2;
+            var exe = updateInfo.Item3;
+            var newestVersion = updateInfo.Item4;
+            var args = updateInfo.Item5;
+
+            if (!File.Exists(temp) || !AssemblyName.GetAssemblyName(temp).Version.Equals(newestVersion))
+            {
+                Helper.DeleteFile(temp);
+
+                Logger.Error("The downloaded file does not match the announced version. Update aborted.");
+
+                Reset();
+                return;
+            }
+
+            Process = new ProcessStartInfo
+            {
+                Arguments = string.Format(CultureInfo.InvariantCulture, @"/c taskkill /f /im ""{0}"" & move /y ""{1}"" ""{2}"" & start """" ""{2}"" /{3} {4}", exe, temp, path, newestVersion, string.Join(" ", args)),
+                CreateNoWindow = true,
+                FileName = "cmd",
+                RedirectStandardError = false,
+                RedirectStandardInput = false,
+                RedirectStandardOutput = false,
+                UseShellExecute = false,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            App.Shutdown();
+        }
+
+        /// <summary>
+        /// Determines whether an update channel can be verified before an executable from it is installed.
+        /// </summary>
+        /// <param name="checksumUri">The published checksum location of the update channel.</param>
+        /// <returns>True when an HTTPS checksum source is configured; otherwise, false.</returns>
+        internal static bool IsVerifiableUpdateChannel(Uri checksumUri)
+        {
+            return checksumUri != null && checksumUri.IsAbsoluteUri && checksumUri.Scheme == Uri.UriSchemeHttps;
+        }
+
         private static void OnFileDownloadCompleted(object sender, AsyncCompletedEventArgs e)
         {
+            Tuple<string, string, string, Version, string[]> updateInfo = null;
+
             try
             {
                 if (e.Error != null)
@@ -29,32 +78,69 @@ namespace WinMemoryCleaner
                 if (e.Cancelled)
                     return;
 
-                var updateInfo = (Tuple<string, string, string, Version, string[]>)e.UserState;
-                var temp = updateInfo.Item1;
-                var path = updateInfo.Item2;
-                var exe = updateInfo.Item3;
-                var newestVersion = updateInfo.Item4;
-                var args = updateInfo.Item5;
+                updateInfo = (Tuple<string, string, string, Version, string[]>)e.UserState;
 
-                if (File.Exists(temp) && AssemblyName.GetAssemblyName(temp).Version.Equals(newestVersion))
+                if (!IsVerifiableUpdateChannel(Constants.App.Repository.LatestExeHashUri))
                 {
-                    Process = new ProcessStartInfo
-                    {
-                        Arguments = string.Format(CultureInfo.InvariantCulture, @"/c taskkill /f /im ""{0}"" & move /y ""{1}"" ""{2}"" & start """" ""{2}"" /{3} {4}", exe, temp, path, newestVersion, string.Join(" ", args)),
-                        CreateNoWindow = true,
-                        FileName = "cmd",
-                        RedirectStandardError = false,
-                        RedirectStandardInput = false,
-                        RedirectStandardOutput = false,
-                        UseShellExecute = false,
-                        WindowStyle = ProcessWindowStyle.Hidden
-                    };
+                    // Never replace the running executable with a download that cannot be verified.
+                    Helper.DeleteFile(updateInfo.Item1);
 
-                    App.Shutdown();
+                    Logger.Error("No checksum source is published for the update channel. Update aborted.");
+
+                    Reset();
+                    return;
                 }
+
+                // Reuse the same client to fetch the published checksum before anything is installed.
+                _client.DownloadStringCompleted -= OnVersionCheckCompleted;
+                _client.DownloadStringCompleted += OnHashDownloadCompleted;
+                _client.DownloadStringAsync(Constants.App.Repository.LatestExeHashUri, updateInfo);
             }
             catch (Exception ex)
             {
+                if (updateInfo != null)
+                    Helper.DeleteFile(updateInfo.Item1);
+
+                Logger.Error(ex);
+
+                Reset();
+            }
+        }
+
+        private static void OnHashDownloadCompleted(object sender, DownloadStringCompletedEventArgs e)
+        {
+            Tuple<string, string, string, Version, string[]> updateInfo = null;
+
+            try
+            {
+                if (e.Error != null)
+                    throw new Exception("Checksum download failed.", e.Error);
+
+                if (e.Cancelled)
+                    return;
+
+                updateInfo = (Tuple<string, string, string, Version, string[]>)e.UserState;
+
+                var expected = Helper.GetSha256FromChecksumText(e.Result);
+                var actual = File.Exists(updateInfo.Item1) ? Helper.GetFileSha256(updateInfo.Item1) : null;
+
+                if (expected == null || actual == null || !string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+                {
+                    Helper.DeleteFile(updateInfo.Item1);
+
+                    Logger.Error("Checksum verification failed for the downloaded update. Update aborted.");
+
+                    Reset();
+                    return;
+                }
+
+                CompleteUpdate(updateInfo);
+            }
+            catch (Exception ex)
+            {
+                if (updateInfo != null)
+                    Helper.DeleteFile(updateInfo.Item1);
+
                 Logger.Error(ex);
 
                 Reset();

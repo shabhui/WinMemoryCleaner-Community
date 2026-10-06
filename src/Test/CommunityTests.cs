@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -39,8 +40,111 @@ namespace WinMemoryCleaner.CommunityTests
             Assert.IsFalse(Helper.IsAutoUpdateSupported);
             Assert.IsNull(Constants.App.Repository.AssemblyInfoUri);
             Assert.IsNull(Constants.App.Repository.LatestExeUri);
+            Assert.IsNull(Constants.App.Repository.LatestExeHashUri);
+            Assert.IsFalse(Updater.IsVerifiableUpdateChannel(Constants.App.Repository.LatestExeHashUri));
             Assert.IsTrue(Constants.App.Repository.AboutUri.IsFile);
             Assert.AreEqual("README.md", Path.GetFileName(Constants.App.Repository.AboutUri.LocalPath));
+        }
+
+        [TestCase("dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea987886", "dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea987886")]
+        [TestCase("dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea987886  WinMemoryCleaner.Community.exe", "dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea987886")]
+        [TestCase("SHA256 (WinMemoryCleaner.Community.exe) = DC91898B20976C1B197B28D64EA8C4BE8D9832271B91E46EB97A0A61EA987886", "dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea987886")]
+        [TestCase("2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae *release.zip", "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae")]
+        public void ChecksumText_IsParsedFromTheFormatsPublishersUse(string text, string expected)
+        {
+            var actual = Helper.GetSha256FromChecksumText(text);
+
+            Assert.IsNotNull(actual, "No checksum was parsed from: " + text);
+            StringAssert.AreEqualIgnoringCase(expected, actual, "Checksums are case-insensitive.");
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase("   ")]
+        [TestCase("dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea98788")]
+        [TestCase("dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea98788664")]
+        [TestCase("dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea98788z")]
+        [TestCase("no checksum is published here")]
+        public void InvalidChecksumText_IsRejected(string text)
+        {
+            Assert.IsNull(Helper.GetSha256FromChecksumText(text));
+        }
+
+        [Test]
+        public void FileSha256_MatchesKnownChecksumsAndHandlesUnreadableFiles()
+        {
+            var empty = WriteTemporaryFile(string.Empty);
+            var text = WriteTemporaryFile("WinMemoryCleaner Community");
+
+            try
+            {
+                Assert.AreEqual("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", Helper.GetFileSha256(empty));
+                Assert.AreEqual("dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea987886", Helper.GetFileSha256(text));
+                Assert.IsNull(Helper.GetFileSha256(null));
+                Assert.IsNull(Helper.GetFileSha256(string.Empty));
+                Assert.IsNull(Helper.GetFileSha256(Path.Combine(Path.GetTempPath(), "wmc-community-missing-" + Guid.NewGuid().ToString("N") + ".bin")));
+            }
+            finally
+            {
+                Helper.DeleteFile(empty);
+                Helper.DeleteFile(text);
+            }
+        }
+
+        [TestCase("http://github.com/shabhui/WinMemoryCleaner-Community/releases/latest/download/WinMemoryCleaner.Community.exe.sha256", false)]
+        [TestCase("file:///C:/update/WinMemoryCleaner.Community.exe.sha256", false)]
+        [TestCase("https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest/download/WinMemoryCleaner.Community.exe.sha256", true)]
+        public void UpdateChannel_IsVerifiableOnlyOverHttps(string checksumUri, bool expected)
+        {
+            Assert.AreEqual(expected, Updater.IsVerifiableUpdateChannel(new Uri(checksumUri)));
+        }
+
+        [Test]
+        public void UpdateChannel_IsNotVerifiableWithoutAChecksumSource()
+        {
+            Assert.IsFalse(Updater.IsVerifiableUpdateChannel(null));
+            Assert.IsFalse(Updater.IsVerifiableUpdateChannel(new Uri("WinMemoryCleaner.Community.exe.sha256", UriKind.Relative)));
+        }
+
+        [Test]
+        public void UnverifiedUpdateDownload_IsDiscardedAndNeverInstalled()
+        {
+            // Whatever the state of the channel, a completed download may only be installed after a
+            // successful checksum verification: without that verification the payload must be gone
+            // and no replacement process may be scheduled.
+            var downloaded = WriteTemporaryFile("unverified update payload");
+            var target = Path.Combine(Path.GetTempPath(), "wmc-community-target-" + Guid.NewGuid().ToString("N") + ".exe");
+            var method = typeof(Updater).GetMethod("OnFileDownloadCompleted", BindingFlags.Static | BindingFlags.NonPublic);
+
+            try
+            {
+                Assert.IsNotNull(method, "The file download completion handler was renamed; update this guard.");
+
+                if (Helper.IsAutoUpdateSupported)
+                    Assert.IsTrue(Updater.IsVerifiableUpdateChannel(Constants.App.Repository.LatestExeHashUri), "Updates must never be supported without a verifiable checksum source.");
+
+                var updateInfo = Tuple.Create(downloaded, target, "WinMemoryCleaner.Community.exe", new Version(3, 0, 8, 2), new string[0]);
+
+                method.Invoke(null, new object[] { null, new AsyncCompletedEventArgs(null, false, updateInfo) });
+
+                Assert.IsFalse(File.Exists(downloaded), "The unverified download must be deleted.");
+                Assert.IsFalse(File.Exists(target), "The unverified download must never replace the executable.");
+                Assert.IsNull(Updater.Process);
+            }
+            finally
+            {
+                Helper.DeleteFile(downloaded);
+                Helper.DeleteFile(target);
+            }
+        }
+
+        private static string WriteTemporaryFile(string content)
+        {
+            var path = Path.Combine(Path.GetTempPath(), "wmc-community-hash-" + Guid.NewGuid().ToString("N") + ".bin");
+
+            File.WriteAllText(path, content);
+
+            return path;
         }
 
         [Test]

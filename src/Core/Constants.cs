@@ -76,10 +76,12 @@ namespace WinMemoryCleaner
                 public static readonly Uri UpstreamUri = new Uri("https://github.com/IgorMundstein/WinMemoryCleaner");
                 public static readonly Uri AboutUri = new Uri(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "README.md"));
 
-                // Both stay at their default (null) value until a verified community update channel
-                // exists. They are left uninitialized on purpose: writing "= null" here is redundant.
+                // All three stay at their default (null) value until a verified community update
+                // channel exists. They are left uninitialized on purpose: writing "= null" here is
+                // redundant, and the checksum URI is required before an update may be installed.
                 public static readonly Uri AssemblyInfoUri;
                 public static readonly Uri LatestExeUri;
+                public static readonly Uri LatestExeHashUri;
 
                 public static readonly Uri DownloadUri = AboutUri;
                 public static readonly Uri Uri = AboutUri;

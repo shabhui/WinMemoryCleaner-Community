@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.InteropServices.ComTypes;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Web.Script.Serialization;
 
 namespace WinMemoryCleaner
@@ -184,6 +187,57 @@ namespace WinMemoryCleaner
         }
 
         /// <summary>
+        /// Computes the SHA-256 checksum of a file.
+        /// </summary>
+        /// <param name="path">The full path of the file to hash.</param>
+        /// <returns>The checksum as lowercase hexadecimal text, or null when the file is missing or cannot be read.</returns>
+        public static string GetFileSha256(string path)
+        {
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                return null;
+
+            try
+            {
+                using (var sha256 = SHA256.Create())
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    var hash = sha256.ComputeHash(stream);
+                    var text = new StringBuilder(hash.Length * 2);
+
+                    foreach (var value in hash)
+                    {
+                        text.Append(value.ToString("x2", CultureInfo.InvariantCulture));
+                    }
+
+                    return text.ToString();
+                }
+            }
+            catch (Exception e)
+            {
+                Logger.Debug("Failed to compute the SHA-256 checksum of " + path + ": " + e.GetMessage());
+
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Extracts the first SHA-256 checksum found in a published checksum text.
+        /// Accepts a bare hash, the "HASH  file" lines written by sha256sum and the
+        /// "SHA256 (file) = HASH" lines written by certutil.
+        /// </summary>
+        /// <param name="text">The published checksum text.</param>
+        /// <returns>The checksum as published, or null when the text contains no SHA-256 checksum.</returns>
+        public static string GetSha256FromChecksumText(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return null;
+
+            var match = Regex.Match(text, @"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])");
+
+            return match.Success ? match.Value : null;
+        }
+
+        /// <summary>
         /// Gets the application's assembly version
         /// </summary>
         public static Version GetVersion()
@@ -199,8 +253,9 @@ namespace WinMemoryCleaner
         }
 
         /// <summary>
-        /// Determines if the current Windows version supports updates via GitHub TLS/SNI.
-        /// Returns false for legacy Windows versions (XP/2003) that cannot reach GitHub.
+        /// Determines whether automatic updates can be used on this machine. Requires a configured
+        /// release channel with HTTPS version, executable and checksum sources, and a supported
+        /// Windows version (GitHub requires TLS/SNI; Windows XP/2003 and earlier cannot connect).
         /// </summary>
         /// <returns>True if updates are supported; otherwise, false.</returns>
         public static bool IsAutoUpdateSupported
@@ -213,6 +268,11 @@ namespace WinMemoryCleaner
 
                 if (Constants.App.Repository.AssemblyInfoUri.Scheme != Uri.UriSchemeHttps ||
                     Constants.App.Repository.LatestExeUri.Scheme != Uri.UriSchemeHttps)
+                    return false;
+
+                // A downloaded update is only installed after its published checksum matched, so a
+                // channel without a verifiable checksum source does not support updates.
+                if (!Updater.IsVerifiableUpdateChannel(Constants.App.Repository.LatestExeHashUri))
                     return false;
 
                 try
