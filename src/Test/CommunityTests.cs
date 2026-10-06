@@ -94,9 +94,9 @@ namespace WinMemoryCleaner.CommunityTests
         [TestCase("http://github.com/shabhui/WinMemoryCleaner-Community/releases/latest/download/WinMemoryCleaner.Community.exe.sha256", false)]
         [TestCase("file:///C:/update/WinMemoryCleaner.Community.exe.sha256", false)]
         [TestCase("https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest/download/WinMemoryCleaner.Community.exe.sha256", true)]
-        public void UpdateChannel_IsVerifiableOnlyOverHttps(string checksumUri, bool expected)
+        public void UpdateChannel_IsVerifiableOnlyOverHttps(string checksumSource, bool expected)
         {
-            Assert.AreEqual(expected, Updater.IsVerifiableUpdateChannel(new Uri(checksumUri)));
+            Assert.AreEqual(expected, Updater.IsVerifiableUpdateChannel(new Uri(checksumSource)));
         }
 
         [Test]
