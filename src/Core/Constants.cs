@@ -35,9 +35,10 @@ namespace WinMemoryCleaner
                 public const string Name = "shabhui and community contributors";
             }
 
-            // Keep disabled until a community repository and a verified release channel exist.
-            // Defaults to false; a redundant "= false" initializer would trip analyzer CA1805.
-            public static readonly bool ReleaseChannelConfigured;
+            // The community release channel publishes the executable, its SHA-256 checksum and the
+            // announced version as assets of this repository's releases, so every download can be
+            // verified before it is installed. A compile-time switch, hence a constant.
+            public const bool ReleaseChannelConfigured = true;
 
             public static class CommandLineArgument
             {
@@ -72,16 +73,18 @@ namespace WinMemoryCleaner
 
             public static class Repository
             {
-                // Local-only until a community repository and release channel are approved.
+                // The upstream project this continuation is based on; community builds and releases
+                // live in this repository.
                 public static readonly Uri UpstreamUri = new Uri("https://github.com/IgorMundstein/WinMemoryCleaner");
                 public static readonly Uri AboutUri = new Uri(System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "README.md"));
 
-                // All three stay at their default (null) value until a verified community update
-                // channel exists. They are left uninitialized on purpose: writing "= null" here is
-                // redundant, and the checksum URI is required before an update may be installed.
-                public static readonly Uri AssemblyInfoUri;
-                public static readonly Uri LatestExeUri;
-                public static readonly Uri LatestExeHashUri;
+                // The update channel is served by this repository's releases. The asset names are
+                // stable, so releases/latest/download/<name> keeps resolving to the newest release.
+                // All three are required: without the announced version there is nothing to compare
+                // against, and an update that cannot be verified is never installed.
+                public static readonly Uri AssemblyInfoUri = new Uri("https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest/download/AssemblyInfo.txt");
+                public static readonly Uri LatestExeUri = new Uri("https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest/download/WinMemoryCleaner.Community.exe");
+                public static readonly Uri LatestExeHashUri = new Uri("https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest/download/WinMemoryCleaner.Community.exe.sha256");
 
                 public static readonly Uri DownloadUri = AboutUri;
                 public static readonly Uri Uri = AboutUri;

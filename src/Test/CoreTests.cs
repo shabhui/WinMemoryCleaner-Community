@@ -127,8 +127,9 @@ namespace WinMemoryCleaner.Test
             [Test]
             public void App_Repository_LatestExeUri_IsValid()
             {
-                Assert.IsNull(Constants.App.Repository.LatestExeUri);
-                Assert.IsFalse(Constants.App.ReleaseChannelConfigured);
+                Assert.IsNotNull(Constants.App.Repository.LatestExeUri);
+                Assert.IsTrue(Constants.App.Repository.LatestExeUri.IsAbsoluteUri);
+                Assert.IsTrue(Constants.App.ReleaseChannelConfigured);
             }
 
             [Test]

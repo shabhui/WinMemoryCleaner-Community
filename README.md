@@ -168,7 +168,9 @@ Self-update never installs a download it cannot verify. When *Auto Update* is en
 3. downloads the published SHA-256 checksum of that executable and compares it with the hash of the downloaded file;
 4. only on an exact match does it replace the executable (terminate, move, restart). A missing or non-HTTPS checksum source, a download error, a mismatch, or an unexpected version aborts the update, deletes the downloaded file, and writes the reason to the log.
 
-Because steps 3 and 4 are mandatory, a channel that publishes no checksum is treated as unsupported (`Helper.IsAutoUpdateSupported` requires an HTTPS checksum source). **The community update channel is currently switched off** (`Constants.App.Repository.LatestExeHashUri` is `null`, `ReleaseChannelConfigured` is `false`, and *Auto Update* defaults to off), so update manually from [Releases](https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest) until a checksum-verified channel is enabled. A checksum published next to the binary protects against a corrupted, truncated, or substituted download — it is not a code signature.
+Because steps 3 and 4 are mandatory, a channel that publishes no checksum is treated as unsupported (`Helper.IsAutoUpdateSupported` requires an HTTPS checksum source).
+
+**Community update channel:** it is enabled and served by this repository's releases. The updater reads `https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest/download/` plus `AssemblyInfo.txt`, `WinMemoryCleaner.Community.exe` and `WinMemoryCleaner.Community.exe.sha256` — every community release publishes those exact asset names. *Auto Update* still defaults to off, so nothing is downloaded until you enable it in the settings; any download that cannot be verified is deleted and the running executable is left alone. A checksum published next to the binary protects against a corrupted, truncated, or substituted download — it is not a code signature.
 
 ### 🔑 Verifiable Code Signing
 

@@ -1,12 +1,17 @@
 ### Unreleased
 
-**After 3.0.8-community.1 (unreleased, unofficial community continuation)**
+**After 3.0.8.2-community.2 (unreleased, unofficial community continuation)**
 
+### 3.0.8.2-community.2
+
+**2026-10-06 (unofficial community continuation, not an upstream release)**
+
+- Enabled the community update channel: `Constants.App.Repository` now points at the release assets of this repository (`releases/latest/download/AssemblyInfo.txt`, `.../WinMemoryCleaner.Community.exe`, `.../WinMemoryCleaner.Community.exe.sha256`) and `ReleaseChannelConfigured` is `true`, so *Auto Update* can be switched on; a download is still installed only after its published SHA-256 matched. Binaries released before this version cannot update themselves and must be replaced manually once
 - Added SHA-256 verification to the self-update path: a downloaded executable is only installed after its published checksum matched. A missing checksum source, a failed download, a mismatch, or a checksum URL that is not HTTPS aborts the update, deletes the downloaded file, and logs the reason (`Helper.GetFileSha256`, `Helper.GetSha256FromChecksumText`, `Updater.IsVerifiableUpdateChannel`, `Constants.App.Repository.LatestExeHashUri`)
 - `Helper.IsAutoUpdateSupported` now also requires a verifiable (HTTPS) checksum source, so a channel that publishes no checksum can never install an update
-- Added a canonical release build workflow (`.github/workflows/community-release.yml`): release artifacts are produced with the same Visual Studio/Roslyn MSBuild as CI and are verified (published checksum vs. built executable, announced version vs. built source) before they are uploaded
+- Added a canonical release build workflow (`.github/workflows/community-release.yml`): release artifacts are produced with the same Visual Studio/Roslyn MSBuild as CI and are verified (published checksum vs. built executable, announced version vs. built source) before they are uploaded; passing a release tag also publishes them as a GitHub Release, which is what the update channel reads
 - `build-community.ps1`: release packaging emits `.sha256` and `AssemblyInfo.txt` (the assets the updater consumes) plus the archive; the version is read from `AssemblyInfo.cs` instead of being duplicated; the script refuses to build when `<LangVersion>4</LangVersion>` is no longer pinned; packaging without `-MSBuildPath` warns; a locked output executable fails with the process id to stop; test reports are written to `build\test-results` inside the repository instead of `%TEMP%`
-- Added 17 tests for checksum parsing (bare, `sha256sum` and `certutil` formats, invalid input), known file hashes, channel verifiability, and the "unverified download is discarded" guard
+- Added 20 tests for checksum parsing (bare, `sha256sum` and `certutil` formats, invalid input), known file hashes, channel verifiability, and the guards that discard an update whose checksum is missing, unparsable, or does not match
 - CI: the NUnit report is now read from the stable `build/test-results` path
 
 ### 3.0.8-community.1

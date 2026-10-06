@@ -34,14 +34,30 @@ namespace WinMemoryCleaner.CommunityTests
         }
 
         [Test]
-        public void ReleaseChannel_IsUnconfiguredAndUsesLocalDocumentation()
+        public void ReleaseChannel_IsConfiguredForThisRepositoryWithVerifiableSources()
         {
-            Assert.IsFalse(Constants.App.ReleaseChannelConfigured);
-            Assert.IsFalse(Helper.IsAutoUpdateSupported);
-            Assert.IsNull(Constants.App.Repository.AssemblyInfoUri);
-            Assert.IsNull(Constants.App.Repository.LatestExeUri);
-            Assert.IsNull(Constants.App.Repository.LatestExeHashUri);
-            Assert.IsFalse(Updater.IsVerifiableUpdateChannel(Constants.App.Repository.LatestExeHashUri));
+            const string RepositoryPath = "/shabhui/WinMemoryCleaner-Community/";
+
+            Assert.IsTrue(Constants.App.ReleaseChannelConfigured, "The community update channel publishes the release assets of this repository.");
+            Assert.IsNotNull(Constants.App.Repository.AssemblyInfoUri);
+            Assert.IsNotNull(Constants.App.Repository.LatestExeUri);
+            Assert.IsNotNull(Constants.App.Repository.LatestExeHashUri);
+            Assert.IsFalse(Helper.IsAutoUpdateSupported, "The compile-time test build must never report update support.");
+
+            Assert.AreEqual(Uri.UriSchemeHttps, Constants.App.Repository.AssemblyInfoUri.Scheme);
+            Assert.AreEqual(Uri.UriSchemeHttps, Constants.App.Repository.LatestExeUri.Scheme);
+            Assert.IsTrue(Updater.IsVerifiableUpdateChannel(Constants.App.Repository.LatestExeHashUri), "An update is only installed from a verifiable (HTTPS) checksum source.");
+
+            Assert.AreEqual("github.com", Constants.App.Repository.AssemblyInfoUri.Host);
+            StringAssert.Contains(RepositoryPath, Constants.App.Repository.LatestExeUri.AbsolutePath);
+            StringAssert.Contains(RepositoryPath, Constants.App.Repository.LatestExeHashUri.AbsolutePath);
+
+            // The updater downloads the release asset that carries the name of the running executable
+            // and reads the announced version and the checksum next to it; those names must not drift.
+            Assert.AreEqual("WinMemoryCleaner.Community.exe", Path.GetFileName(Constants.App.Repository.LatestExeUri.AbsolutePath));
+            Assert.AreEqual("WinMemoryCleaner.Community.exe.sha256", Path.GetFileName(Constants.App.Repository.LatestExeHashUri.AbsolutePath));
+            Assert.AreEqual("AssemblyInfo.txt", Path.GetFileName(Constants.App.Repository.AssemblyInfoUri.AbsolutePath));
+
             Assert.IsTrue(Constants.App.Repository.AboutUri.IsFile);
             Assert.AreEqual("README.md", Path.GetFileName(Constants.App.Repository.AboutUri.LocalPath));
         }
@@ -111,14 +127,18 @@ namespace WinMemoryCleaner.CommunityTests
         {
             // Whatever the state of the channel, a completed download may only be installed after a
             // successful checksum verification: without that verification the payload must be gone
-            // and no replacement process may be scheduled.
+            // and no replacement process may be scheduled. In the test build no update client exists
+            // and the checksum download cannot reach the network, so the verification has to fail.
             var downloaded = WriteTemporaryFile("unverified update payload");
             var target = Path.Combine(Path.GetTempPath(), "wmc-community-target-" + Guid.NewGuid().ToString("N") + ".exe");
             var method = typeof(Updater).GetMethod("OnFileDownloadCompleted", BindingFlags.Static | BindingFlags.NonPublic);
+            var client = typeof(Updater).GetField("_client", BindingFlags.Static | BindingFlags.NonPublic);
 
             try
             {
                 Assert.IsNotNull(method, "The file download completion handler was renamed; update this guard.");
+                Assert.IsNotNull(client, "The update client field was renamed; update this guard.");
+                Assert.IsNull(client.GetValue(null), "This guard only holds while no update client exists: a client would reach the network.");
 
                 if (Helper.IsAutoUpdateSupported)
                     Assert.IsTrue(Updater.IsVerifiableUpdateChannel(Constants.App.Repository.LatestExeHashUri), "Updates must never be supported without a verifiable checksum source.");
@@ -136,6 +156,84 @@ namespace WinMemoryCleaner.CommunityTests
                 Helper.DeleteFile(downloaded);
                 Helper.DeleteFile(target);
             }
+        }
+
+        [TestCase("DC91898B20976C1B197B28D64EA8C4BE8D9832271B91E46EB97A0A61EA987886", true)]
+        [TestCase("dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea987886  WinMemoryCleaner.Community.exe", true)]
+        [TestCase("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", false)]
+        [TestCase("", false)]
+        [TestCase("the publisher did not write a checksum here", false)]
+        [TestCase(null, false)]
+        public void DownloadedUpdate_IsVerifiedOnlyAgainstAMatchingChecksum(string publishedChecksum, bool expected)
+        {
+            // The payload is the file whose SHA-256 is known from FileSha256_MatchesKnownChecksums..., so
+            // the published checksums below are the only input that varies.
+            var payload = WriteTemporaryFile("WinMemoryCleaner Community");
+
+            try
+            {
+                Assert.AreEqual(expected, Updater.IsVerifiedUpdate(payload, publishedChecksum), "Published checksum: " + (publishedChecksum ?? "<null>"));
+            }
+            finally
+            {
+                Helper.DeleteFile(payload);
+            }
+        }
+
+        [Test]
+        public void MissingDownload_IsNeverVerified()
+        {
+            var missing = Path.Combine(Path.GetTempPath(), "wmc-community-missing-" + Guid.NewGuid().ToString("N") + ".bin");
+
+            Assert.IsFalse(File.Exists(missing));
+            Assert.IsFalse(Updater.IsVerifiedUpdate(missing, "dc91898b20976c1b197b28d64ea8c4be8d9832271b91e46eb97a0a61ea987886"), "A file that does not exist can never be verified.");
+        }
+
+        [TestCase("0000000000000000000000000000000000000000000000000000000000000000")]
+        [TestCase("")]
+        [TestCase("the publisher did not write a checksum here")]
+        public void DownloadedUpdate_IsDiscardedWhenItsChecksumDoesNotMatch(string publishedChecksum)
+        {
+            // A mismatch, a missing hash and an unparsable checksum all have to end the same way: the
+            // payload is deleted and no replacement of the running executable is scheduled.
+            var downloaded = WriteTemporaryFile("update payload that does not match its checksum");
+            var target = Path.Combine(Path.GetTempPath(), "wmc-community-target-" + Guid.NewGuid().ToString("N") + ".exe");
+
+            try
+            {
+                var method = typeof(Updater).GetMethod("OnHashDownloadCompleted", BindingFlags.Static | BindingFlags.NonPublic);
+
+                Assert.IsNotNull(method, "The checksum download completion handler was renamed; update this guard.");
+
+                var updateInfo = Tuple.Create(downloaded, target, "WinMemoryCleaner.Community.exe", new Version(3, 0, 8, 2), new string[0]);
+                var arguments = CreateCompletedDownload(publishedChecksum, updateInfo);
+
+                Assert.IsNotNull(arguments, "The event arguments of a completed checksum download could not be created; update this guard.");
+
+                method.Invoke(null, new object[] { null, arguments });
+
+                Assert.IsFalse(File.Exists(downloaded), "The unverified download must be deleted.");
+                Assert.IsFalse(File.Exists(target), "The unverified download must never replace the executable.");
+                Assert.IsNull(Updater.Process);
+            }
+            finally
+            {
+                Helper.DeleteFile(downloaded);
+                Helper.DeleteFile(target);
+            }
+        }
+
+        // .NET Framework keeps the constructor of DownloadStringCompletedEventArgs non-public, so the
+        // completed-download path of the updater is driven through reflection instead of a subclass.
+        private static DownloadStringCompletedEventArgs CreateCompletedDownload(string result, object userState)
+        {
+            var constructor = typeof(DownloadStringCompletedEventArgs).GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                null,
+                new[] { typeof(string), typeof(Exception), typeof(bool), typeof(object) },
+                null);
+
+            return constructor == null ? null : (DownloadStringCompletedEventArgs)constructor.Invoke(new object[] { result, null, false, userState });
         }
 
         private static string WriteTemporaryFile(string content)

@@ -66,6 +66,22 @@ namespace WinMemoryCleaner
             return checksumUri != null && checksumUri.IsAbsoluteUri && checksumUri.Scheme == Uri.UriSchemeHttps;
         }
 
+        /// <summary>
+        /// Determines whether a downloaded file matches the checksum its publisher announced. This is the
+        /// only state in which an update may be installed: without a parsable published checksum, or on
+        /// any difference, the download is not verified.
+        /// </summary>
+        /// <param name="path">The downloaded file that is about to be installed.</param>
+        /// <param name="publishedChecksum">The content of the published checksum file.</param>
+        /// <returns>True when the file exists and its SHA-256 equals the published checksum; otherwise, false.</returns>
+        internal static bool IsVerifiedUpdate(string path, string publishedChecksum)
+        {
+            var expected = Helper.GetSha256FromChecksumText(publishedChecksum);
+            var actual = File.Exists(path) ? Helper.GetFileSha256(path) : null;
+
+            return expected != null && actual != null && string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
+        }
+
         private static void OnFileDownloadCompleted(object sender, AsyncCompletedEventArgs e)
         {
             Tuple<string, string, string, Version, string[]> updateInfo = null;
@@ -121,10 +137,7 @@ namespace WinMemoryCleaner
 
                 updateInfo = (Tuple<string, string, string, Version, string[]>)e.UserState;
 
-                var expected = Helper.GetSha256FromChecksumText(e.Result);
-                var actual = File.Exists(updateInfo.Item1) ? Helper.GetFileSha256(updateInfo.Item1) : null;
-
-                if (expected == null || actual == null || !string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+                if (!IsVerifiedUpdate(updateInfo.Item1, e.Result))
                 {
                     Helper.DeleteFile(updateInfo.Item1);
 
