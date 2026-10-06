@@ -1,0 +1,142 @@
+name: Community release build
+
+# Canonical release build. Release binaries must be produced here, with the same Visual
+# Studio/Roslyn MSBuild that Community CI uses, instead of on a developer machine with the
+# in-box .NET Framework (C# 5) compiler: only then does a green CI run describe the binary
+# that users download. The script also enforces the pinned LangVersion=4.
+#
+# The build produces the release assets of the update channel in dist\:
+#   - WinMemoryCleaner.Community.exe            the executable
+#   - WinMemoryCleaner.Community.exe.sha256     published checksum, verified before install
+#   - AssemblyInfo.txt                          announced version, read by the updater
+#   - WinMemoryCleaner.Community-<ver>.zip      archive for manual downloads
+# Publishing a GitHub Release is optional and only happens when release_tag is set.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Publish a GitHub Release with this tag (empty = build artifacts only)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release-build:
+    name: Release artifacts (Visual Studio MSBuild)
+    runs-on: windows-latest
+    permissions:
+      contents: write # only used by the optional release publish step
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: src/packages
+          key: community-nuget-${{ hashFiles('src/packages.config') }}
+          restore-keys: community-nuget-
+
+      - name: Restore NuGet packages
+        shell: pwsh
+        run: |
+          $nuget = Join-Path $env:RUNNER_TEMP 'nuget.exe'
+          Invoke-WebRequest -Uri 'https://dist.nuget.org/win-x86-commandline/latest/nuget.exe' -OutFile $nuget
+          & $nuget restore (Join-Path 'src' 'packages.config') -PackagesDirectory (Join-Path 'src' 'packages') -NonInteractive
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Set up MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Report toolchain
+        shell: pwsh
+        run: |
+          msbuild -version
+          $pack = 'C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.0\mscorlib.dll'
+          $pkg = 'src\packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\.NETFramework\v4.0\mscorlib.dll'
+          Write-Host "installed 4.0 targeting pack: $(Test-Path $pack)"
+          Write-Host "restored net40 reference assemblies: $(Test-Path $pkg)"
+          if (-not (Test-Path $pkg)) { throw "net40 reference assemblies package is missing after restore" }
+
+      - name: Build release artifacts and run the safe tests
+        shell: pwsh
+        run: |
+          $msbuild = (Get-Command msbuild).Source
+          & .\build-community.ps1 -Tests -Package -MSBuildPath $msbuild
+
+      - name: Verify the published checksum and the announced version
+        shell: pwsh
+        run: |
+          $dist = Get-ChildItem dist -Directory | Select-Object -First 1
+          if (-not $dist) { throw 'The package directory was not produced.' }
+
+          $exe = Join-Path $dist.FullName 'WinMemoryCleaner.Community.exe'
+          $sidecar = "$exe.sha256"
+          $zip = Get-ChildItem dist -File -Filter '*.zip' | Select-Object -First 1
+
+          # The updater extracts the 64 hex digits from the published checksum and compares
+          # them with the SHA-256 of the downloaded executable before it installs anything.
+          $published = ([regex]::Match((Get-Content $sidecar -Raw), '[0-9a-fA-F]{64}')).Value.ToLowerInvariant()
+          $actual = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($published -ne $actual) { throw "The published checksum $published does not match the executable $actual." }
+
+          $announced = ([regex]::Match((Get-Content (Join-Path $dist.FullName 'AssemblyInfo.txt') -Raw), 'AssemblyVersion\("(.*)"\)\]')).Groups[1].Value
+          $sourceVersion = ([regex]::Match((Get-Content 'src\Properties\AssemblyInfo.cs' -Raw), 'AssemblyVersion\("([0-9]+(?:\.[0-9]+){3})"\)')).Groups[1].Value
+          if ($announced -ne $sourceVersion) { throw "AssemblyInfo.txt announces $announced but the built source is $sourceVersion." }
+
+          $parsed = $null
+          if (-not [Version]::TryParse($announced, [ref]$parsed)) { throw "AssemblyInfo.txt does not announce a parsable version: $announced" }
+
+          $zipHash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "announced version: $announced"
+          Write-Host "exe sha256       : $actual"
+          Write-Host "archive          : $($zip.Name)"
+          Write-Host "archive sha256   : $zipHash"
+
+          @(
+            '### Community release artifacts',
+            '',
+            "- announced version: ``$announced``",
+            "- exe sha256: ``$actual``",
+            "- archive: ``$($zip.Name)``",
+            "- archive sha256: ``$zipHash``"
+          ) | Out-File $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: community-release-${{ github.run_number }}
+          path: dist/**
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: ${{ inputs.release_tag != '' && github.ref == 'refs/heads/community' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ inputs.release_tag }}'
+          $dist = (Get-ChildItem dist -Directory | Select-Object -First 1).FullName
+          $zip = (Get-ChildItem dist -File -Filter '*.zip' | Select-Object -First 1).FullName
+
+          # The executable, its checksum and the announced version keep stable asset names, so
+          # releases/latest/download/<name> always resolves to the newest release.
+          $assets = @(
+            (Join-Path $dist 'WinMemoryCleaner.Community.exe'),
+            (Join-Path $dist 'WinMemoryCleaner.Community.exe.sha256'),
+            (Join-Path $dist 'AssemblyInfo.txt'),
+            $zip
+          )
+
+          & gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "WinMemoryCleaner Community $tag (unofficial)" --generate-notes
+          if ($LASTEXITCODE -ne 0) { exit 1 }

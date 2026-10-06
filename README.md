@@ -14,7 +14,7 @@ WMC is a free RAM cleaner that effectively optimizes memory areas by utilizing t
 [![](./docs/assets/images/main-window.png)](#windows-memory-cleaner)
 
 ## 💾 Download
-> **Community note**: this community repository publishes **no releases**. The badge and package-manager links below point to the **official upstream** distribution by Igor Mundstein; community binaries must be built from source (see *Build from source* below).
+> **Community note**: community binaries are published on this repository's [Releases](https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest) page (unsigned, built by CI) and can be built from source (see *Build from source* below). The badge and package-manager links below belong to the **official upstream** distribution by Igor Mundstein.
 
 [![](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2FIgorMundstein%2FWinMemoryCleaner%2Freleases%2Flatest&query=%24.tag_name&label=Release&style=for-the-badge)](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest/download/WinMemoryCleaner.exe)
 
@@ -42,7 +42,7 @@ winget install IgorMundstein.WinMemoryCleaner
 
 ### 🛠️ Build from source (community)
 
-This community build stays on **.NET Framework 4.0 / WPF**, so a full Visual Studio install is not required:
+This community build stays on **.NET Framework 4.0 / WPF** and pins `<LangVersion>4</LangVersion>`, so a full Visual Studio install is not required for development:
 
 ```powershell
 # production binary only (no tests, no NUnit dependency)
@@ -52,7 +52,13 @@ powershell -ExecutionPolicy Bypass -File .\build-community.ps1
 powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -Package
 ```
 
-Or plain MSBuild: `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe src\WinMemoryCleaner.csproj /t:Rebuild /p:Configuration=Release`. NuGet packages are restored from `src\packages.config` into `src\packages`.
+**Released binaries are built by CI, not on a developer machine.** The in-box .NET Framework tools ship a C# 5 compiler, while CI and the [Community release build](/.github/workflows/community-release.yml) workflow use Visual Studio/Roslyn MSBuild and load the analyzers of `src\AllRules.ruleset`. Build the same way locally by passing that MSBuild:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -Package -MSBuildPath 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
+```
+
+`-Package` warns when it runs without `-MSBuildPath`, the script refuses to run when the pinned `LangVersion` was changed, and a locked output executable fails with the process id to stop. Test reports and packages stay inside the repository (`build\test-results`, `dist\`). NuGet packages are restored from `src\packages.config` into `src\packages`.
 
 ## 🚀 Features
 
@@ -151,7 +157,18 @@ We understand that users are rightfully skeptical of system utilities. This proj
 
 ### 🔑 Automated & Secure Builds (CI/CD)
 
-Every official release of WinMemoryCleaner is built, signed, and published automatically by a **CI/CD pipeline using GitHub Actions**. The entire process is defined in the public [release.yml](/.github/workflows/release.yml) workflow file in this repository. This ensures that the distributed executables are compiled directly from the source code hosted on GitHub, eliminating the potential for manual error or intervention.
+Every community release is built and published by **GitHub Actions**, with no manual build step: [Community CI](/.github/workflows/community-ci.yml) compiles both configurations and runs the full safe test suite on every push, and the [Community release build](/.github/workflows/community-release.yml) workflow produces the publishable artifacts (executable, `.sha256`, `AssemblyInfo.txt`, archive) with the same Visual Studio/Roslyn toolchain and verifies the published checksum against the built executable before anything is uploaded. The upstream signing, release, and package-manager workflows are preserved but disabled in [`.github/workflows-disabled/`](/.github/workflows-disabled).
+
+### 🔁 Download Verification (Self-Update)
+
+Self-update never installs a download it cannot verify. When *Auto Update* is enabled, the updater:
+
+1. reads the announced version from the channel's `AssemblyInfo.txt` and stops unless it is newer than the running version;
+2. downloads the new executable;
+3. downloads the published SHA-256 checksum of that executable and compares it with the hash of the downloaded file;
+4. only on an exact match does it replace the executable (terminate, move, restart). A missing or non-HTTPS checksum source, a download error, a mismatch, or an unexpected version aborts the update, deletes the downloaded file, and writes the reason to the log.
+
+Because steps 3 and 4 are mandatory, a channel that publishes no checksum is treated as unsupported (`Helper.IsAutoUpdateSupported` requires an HTTPS checksum source). **The community update channel is currently switched off** (`Constants.App.Repository.LatestExeHashUri` is `null`, `ReleaseChannelConfigured` is `false`, and *Auto Update* defaults to off), so update manually from [Releases](https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest) until a checksum-verified channel is enabled. A checksum published next to the binary protects against a corrupted, truncated, or substituted download — it is not a code signature.
 
 ### 🔑 Verifiable Code Signing
 

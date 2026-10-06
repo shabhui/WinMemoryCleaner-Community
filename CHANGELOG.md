@@ -1,3 +1,14 @@
+### Unreleased
+
+**After 3.0.8-community.1 (unreleased, unofficial community continuation)**
+
+- Added SHA-256 verification to the self-update path: a downloaded executable is only installed after its published checksum matched. A missing checksum source, a failed download, a mismatch, or a checksum URL that is not HTTPS aborts the update, deletes the downloaded file, and logs the reason (`Helper.GetFileSha256`, `Helper.GetSha256FromChecksumText`, `Updater.IsVerifiableUpdateChannel`, `Constants.App.Repository.LatestExeHashUri`)
+- `Helper.IsAutoUpdateSupported` now also requires a verifiable (HTTPS) checksum source, so a channel that publishes no checksum can never install an update
+- Added a canonical release build workflow (`.github/workflows/community-release.yml`): release artifacts are produced with the same Visual Studio/Roslyn MSBuild as CI and are verified (published checksum vs. built executable, announced version vs. built source) before they are uploaded
+- `build-community.ps1`: release packaging emits `.sha256` and `AssemblyInfo.txt` (the assets the updater consumes) plus the archive; the version is read from `AssemblyInfo.cs` instead of being duplicated; the script refuses to build when `<LangVersion>4</LangVersion>` is no longer pinned; packaging without `-MSBuildPath` warns; a locked output executable fails with the process id to stop; test reports are written to `build\test-results` inside the repository instead of `%TEMP%`
+- Added 17 tests for checksum parsing (bare, `sha256sum` and `certutil` formats, invalid input), known file hashes, channel verifiability, and the "unverified download is discarded" guard
+- CI: the NUnit report is now read from the stable `build/test-results` path
+
 ### 3.0.8-community.1
 
 **2026-10-05 (unofficial community continuation, not an upstream release)**

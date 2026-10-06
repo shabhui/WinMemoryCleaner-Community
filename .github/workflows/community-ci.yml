@@ -68,14 +68,13 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          # The script writes the NUnit report under $env:TEMP (8.3 short path on
-          # runners), so copy the newest report to a stable workspace path first.
-          $report = Get-ChildItem (Join-Path $env:TEMP 'wmc-community-tests-*\TestResults.xml') -ErrorAction SilentlyContinue |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
-          if ($report) {
+          # The build script writes the NUnit report into the repository
+          # (build\test-results), so it can be published from a stable path.
+          $report = 'build\test-results\TestResults.xml'
+          if (Test-Path $report) {
             New-Item -ItemType Directory -Path TestResults -Force | Out-Null
-            Copy-Item $report.FullName (Join-Path 'TestResults' 'TestResults.xml') -Force
-            Write-Host "Collected $($report.FullName)"
+            Copy-Item $report (Join-Path 'TestResults' 'TestResults.xml') -Force
+            Write-Host "Collected $report"
           } else {
             Write-Host 'No NUnit report found'
           }
