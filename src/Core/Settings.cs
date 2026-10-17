@@ -86,6 +86,8 @@ namespace WinMemoryCleaner
 
         public static bool UseHotkey { get; set; }
 
+        public static MonitoringOptions Monitoring { get; private set; }
+
         #endregion
 
         #region Methods
@@ -123,6 +125,7 @@ namespace WinMemoryCleaner
             TrayIconWarningColor = Brushes.DarkGoldenrod;
             TrayIconWarningLevel = 80;
             UseHotkey = false;
+            Monitoring = new MonitoringOptions();
 
             // User values
             try
@@ -196,6 +199,7 @@ namespace WinMemoryCleaner
                         TrayIconWarningColor = Convert.ToString(key.GetValue(Helper.NameOf(() => TrayIconWarningColor), TrayIconWarningColor), _culture).ToBrush(TrayIconWarningColor);
                         TrayIconWarningLevel = Convert.ToByte(key.GetValue(Helper.NameOf(() => TrayIconWarningLevel), TrayIconWarningLevel), _culture);
                         UseHotkey = Convert.ToBoolean(key.GetValue(Helper.NameOf(() => UseHotkey), UseHotkey), _culture);
+                        Monitoring = MonitoringOptions.Deserialize(Convert.ToString(key.GetValue("MonitoringOptions", string.Empty), CultureInfo.InvariantCulture));
                     }
                     else
                     {
@@ -292,6 +296,7 @@ namespace WinMemoryCleaner
                         key.SetValue(Helper.NameOf(() => TrayIconWarningColor), TrayIconWarningColor.GetHex(true));
                         key.SetValue(Helper.NameOf(() => TrayIconWarningLevel), TrayIconWarningLevel);
                         key.SetValue(Helper.NameOf(() => UseHotkey), UseHotkey ? 1 : 0);
+                        key.SetValue("MonitoringOptions", Monitoring.Serialize(), RegistryValueKind.String);
                     }
                 }
             }

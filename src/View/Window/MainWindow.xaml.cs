@@ -1,476 +1,284 @@
-﻿using System;
+using System;
 using System.ComponentModel;
 using System.Linq;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace WinMemoryCleaner
 {
-    /// <summary>
-    /// Main Window
-    /// </summary>
-    /// <seealso cref="Window" />
-    /// <seealso cref="System.Windows.Markup.IComponentConnector" />
+    /// <summary>Cleaner shell with independent, demand-driven resource monitoring.</summary>
     public partial class MainWindow : View
     {
         private const double ExpandedHeight = 700;
-        private const double ExpandedMinHeight = 440;
-        private const double ExpandedMinWidth = 680;
         private const double ExpandedWidth = 960;
-
+        private const double ExpandedMinHeight = 520;
+        private const double ExpandedMinWidth = 760;
+        private readonly MainViewModel _viewModel;
+        private MonitoringOverlay _overlay;
+        private SettingsPanel _settings;
         private bool? _compactModeApplied;
-        private bool _expandedLayoutApplied;
+        private bool _closed;
+        private bool _actionRunning;
+        private int _page;
         private double _lastExpandedHeight = ExpandedHeight;
         private double _lastExpandedWidth = ExpandedWidth;
-        private readonly MainViewModel _viewModel;
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="MainWindow" /> class.
-        /// </summary>
+        /// <summary>The shared monitoring presentation used by the shell and overlay.</summary>
+        public MonitoringViewModel Monitoring { get; private set; }
+
+        /// <summary>Creates the shell without starting detailed sampling until it is visible.</summary>
         public MainWindow()
         {
-            // Check if application is shutting down
-            if (Application.Current != null && Application.Current.Dispatcher != null && Application.Current.Dispatcher.HasShutdownStarted)
-                return;
-
+            var locator = (ViewModelLocator)FindResource("ViewModelLocator");
+            _viewModel = locator.MainViewModel;
+            Monitoring = new MonitoringViewModel(_viewModel, Dispatcher);
             InitializeComponent();
-
-            // Set initial focus and layout once on load
             Loaded += OnMainWindowLoaded;
             Closed += OnMainWindowClosed;
-
             IsVisibleChanged += OnWindowVisibleChanged;
-
-            _viewModel = DataContext as MainViewModel;
-
-            if (_viewModel != null)
-            {
-                _viewModel.OnAddProcessToExclusionListCommandCompleted += OnAddProcessToExclusionListCommandCompleted;
-                _viewModel.OnLanguageChangeCompleted += Refresh;
-                _viewModel.PropertyChanged += OnViewModelPropertyChanged;
-                _viewModel.OnNavigateUriCommandCompleted += OnNavigateUriCommandCompleted;
-                _viewModel.OnOptimizeCommandCompleted += OnOptimizeCommandCompleted;
-                _viewModel.OnRemoveProcessFromExclusionListCommandCompleted += () => SetFocusTo(ProcessExclusionList);
-            }
-
-            // Slider
-            var sliderPreviewMouseLeftButtonDownEvent = new MouseButtonEventHandler((sender, e) =>
-                {
-                    var slider = (Slider)sender;
-                    var track = slider.Template.FindName("PART_Track", slider) as Track;
-
-                    if (!slider.IsMoveToPointEnabled || track == null || track.Thumb == null || track.Thumb.IsMouseOver)
-                        return;
-
-                    track.Thumb.UpdateLayout();
-                    track.Thumb.RaiseEvent(new MouseButtonEventArgs(e.MouseDevice, e.Timestamp, MouseButton.Left)
-                    {
-                        RoutedEvent = MouseLeftButtonDownEvent,
-                        Source = track.Thumb
-                    });
-                });
-
-            AutoOptimizationIntervalSlider.AddHandler(PreviewMouseLeftButtonDownEvent, sliderPreviewMouseLeftButtonDownEvent, true);
-            AutoOptimizationMemoryUsageSlider.AddHandler(PreviewMouseLeftButtonDownEvent, sliderPreviewMouseLeftButtonDownEvent, true);
-            FontSizeSlider.AddHandler(PreviewMouseLeftButtonDownEvent, sliderPreviewMouseLeftButtonDownEvent, true);
+            StateChanged += OnWindowStateChanged;
+            _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _viewModel.OnLanguageChangeCompleted += OnLanguageChanged;
+            _viewModel.OnNavigateUriCommandCompleted += OnNavigateUriCommandCompleted;
+            _viewModel.OnOptimizeCommandCompleted += OnOptimizeCommandCompleted;
+            Monitoring.PropertyChanged += OnMonitoringChanged;
+            Localizer.StaticPropertyChanged += OnLocalizerChanged;
+            RefreshColumnHeaders();
+            SelectPage(0);
+            if (Monitoring.OverlayEnabled) { SyncOverlay(); Monitoring.RefreshNow(); }
         }
 
-        /// <summary>
-        /// Applies the requested compact or expanded window layout.
-        /// </summary>
-        /// <param name="compactMode">If set to <c>true</c>, applies compact mode.</param>
+        /// <summary>Selects overview (0), processes (1), or settings (2).</summary>
+        /// <param name="page">The requested page.</param>
+        public void SelectPage(int page)
+        {
+            if (OverviewPage == null || ProcessPage == null || SettingsPage == null) return;
+            _page = page >= 0 && page <= 2 ? page : 0;
+            OverviewPage.Visibility = _page == 0 ? Visibility.Visible : Visibility.Collapsed;
+            ProcessPage.Visibility = _page == 1 ? Visibility.Visible : Visibility.Collapsed;
+            SettingsPage.Visibility = _page == 2 ? Visibility.Visible : Visibility.Collapsed;
+            if (_page == 2 && _settings == null)
+            {
+                _settings = new SettingsPanel { DataContext = _viewModel };
+                SettingsHost.Content = _settings;
+            }
+            if (_page == 0) OverviewNav.IsChecked = true;
+            else if (_page == 1) ProcessNav.IsChecked = true;
+            else SettingsNav.IsChecked = true;
+            UpdateDemand();
+        }
+
+        private void UpdateDemand()
+        {
+            if (_closed || Monitoring == null) return;
+            bool visibleConsumer = IsVisible && WindowState != WindowState.Minimized && !_viewModel.CompactMode && _page != 2;
+            Monitoring.SetViewState(visibleConsumer, _page == 1);
+        }
+        private void OnPageChecked(object sender, RoutedEventArgs e)
+        {
+            var button = sender as RadioButton;
+            int page;
+            if (button != null && int.TryParse(Convert.ToString(button.Tag, System.Globalization.CultureInfo.InvariantCulture), out page)) SelectPage(page);
+        }
+        private void OnRefreshClick(object sender, RoutedEventArgs e) { Monitoring.RefreshNow(); }
+        private void OnProcessSorting(object sender, DataGridSortingEventArgs e)
+        {
+            e.Handled = true;
+            var direction = Monitoring.Sort(e.Column.SortMemberPath);
+            foreach (var column in ProcessGrid.Columns) column.SortDirection = null;
+            e.Column.SortDirection = direction;
+        }
+        private void RefreshColumnHeaders()
+        {
+            if (ProcessGrid == null) return;
+            string[] keys = { "Name", "Pid", "WorkingSet", "Private", "CpuColumn", "GpuColumn", "GpuMemory" };
+            for (int i = 0; i < keys.Length; i++) ProcessGrid.Columns[i].Header = Monitoring.Labels[keys[i]];
+        }
+        private void OnTrimClick(object sender, RoutedEventArgs e) { ExecuteSelected(false); }
+        private void OnTerminateClick(object sender, RoutedEventArgs e) { ExecuteSelected(true); }
+        private void ExecuteSelected(bool terminate)
+        {
+            if (_actionRunning) return;
+            var selected = Monitoring.SelectedProcess;
+            if (selected == null) { Monitoring.ActionStatus = Monitoring.Labels["NoSelection"]; return; }
+            // Capture the selected identity BEFORE opening a modal dialog. A refresh may replace the row.
+            var target = selected.Snapshot;
+            if (terminate)
+            {
+                var prompt = string.Format(Localizer.Culture, Monitoring.Labels["Confirm"], target.Name, target.Id);
+                var dialog = new MessageDialog(this, prompt, Enums.Dialog.Button.No, Enums.Dialog.Button.Yes) { Title = Monitoring.Labels["ConfirmTitle"] };
+                if (dialog.ShowDialog() != true)
+                {
+                    Monitoring.ActionStatus = Monitoring.Labels["NotConfirmed"];
+                    return;
+                }
+            }
+            _actionRunning = true;
+            TrimSelected.IsEnabled = false; TerminateSelected.IsEnabled = false;
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                var result = new ProcessActionService().Execute(target, terminate, terminate);
+                if (_closed || Dispatcher.HasShutdownStarted) return;
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (_closed) return;
+                    _actionRunning = false;
+                    TrimSelected.ClearValue(IsEnabledProperty); TerminateSelected.ClearValue(IsEnabledProperty);
+                    string key = result.Outcome.ToString();
+                    Monitoring.ActionStatus = target.Name + " (PID " + target.Id + ") — " + Monitoring.Labels[key];
+                    if (result.Outcome == ProcessActionOutcome.Failed || result.Outcome == ProcessActionOutcome.AccessDenied)
+                        Monitoring.ActionStatus += "：" + result.Detail;
+                    Monitoring.RefreshNow();
+                }), DispatcherPriority.Background);
+            });
+        }
+        private void OnMonitoringChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == "OverlayEnabled") SyncOverlay();
+        }
+        private void SyncOverlay()
+        {
+            if (_closed) return;
+            if (Monitoring.OverlayEnabled)
+            {
+                if (_overlay == null) _overlay = new MonitoringOverlay(Monitoring);
+                if (!_overlay.IsVisible) _overlay.Show();
+            }
+            else if (_overlay != null) _overlay.Hide();
+        }
+        private void OnDragOverlay(object sender, RoutedEventArgs e)
+        {
+            Monitoring.OverlayEnabled = true;
+            SyncOverlay();
+            _overlay.BeginReposition();
+        }
+        private void OnMonitorOnlyClick(object sender, RoutedEventArgs e)
+        {
+            Monitoring.OverlayEnabled = true;
+            SyncOverlay();
+            CloseToTheNotificationArea();
+        }
+        private void OnDisplayDropDown(object sender, EventArgs e) { Monitoring.RefreshDisplays(); }
+
         private void ApplyCompactMode(bool compactMode)
         {
-            if (_compactModeApplied.HasValue && _compactModeApplied.Value == compactMode)
-                return;
-
+            if (_compactModeApplied == compactMode) return;
             if (compactMode)
             {
-                if (_expandedLayoutApplied)
+                if (_compactModeApplied.HasValue)
                 {
-                    CacheExpandedSize();
-
-                    if (WindowState == WindowState.Maximized)
-                        WindowState = WindowState.Normal;
+                    var bounds = WindowState == WindowState.Maximized ? RestoreBounds : new Rect(0, 0, ActualWidth, ActualHeight);
+                    if (bounds.Width >= ExpandedMinWidth && bounds.Height >= ExpandedMinHeight)
+                    { _lastExpandedWidth = bounds.Width; _lastExpandedHeight = bounds.Height; }
                 }
-
-                MinHeight = 0;
-                MinWidth = 0;
+                WindowState = WindowState.Normal;
+                MinHeight = 0; MinWidth = 0;
                 ResizeMode = ResizeMode.NoResize;
-                SizeToContent = SizeToContent.WidthAndHeight;
+                SizeToContent = SizeToContent.Height;
+                Width = 640;
                 WindowResizeGrip.Visibility = Visibility.Collapsed;
             }
             else
             {
                 SizeToContent = SizeToContent.Manual;
                 ResizeMode = ResizeMode.CanResizeWithGrip;
-                MinHeight = ExpandedMinHeight;
-                MinWidth = ExpandedMinWidth;
-                Width = _lastExpandedWidth;
-                Height = _lastExpandedHeight;
+                MinHeight = ExpandedMinHeight; MinWidth = ExpandedMinWidth;
+                Width = Math.Max(ExpandedMinWidth, _lastExpandedWidth);
+                Height = Math.Max(ExpandedMinHeight, _lastExpandedHeight);
                 WindowResizeGrip.Visibility = Visibility.Visible;
-                _expandedLayoutApplied = true;
             }
-
             _compactModeApplied = compactMode;
+            UpdateDemand();
         }
-
-        /// <summary>
-        /// Caches a usable expanded window size for the current session.
-        /// </summary>
-        private void CacheExpandedSize()
+        private void OnMainWindowLoaded(object sender, RoutedEventArgs e)
         {
-            if (WindowState == WindowState.Minimized)
-                return;
-
-            var bounds = WindowState == WindowState.Maximized
-                    ? RestoreBounds
-                    : new Rect(0, 0, ActualWidth, ActualHeight);
-
-                if (bounds.Width <= 0 || bounds.Height <= 0)
-                    return;
-
-                _lastExpandedWidth = bounds.Width;
-            _lastExpandedHeight = bounds.Height;
+            ApplyCompactMode(_viewModel.CompactMode);
+            UpdateDemand(); SyncOverlay(); SetFocusTo(Optimize);
         }
-
-        /// <summary>
-        /// Closes the window to the notification area.
-        /// </summary>
-        private void CloseToTheNotificationArea()
+        private void OnMainWindowClosed(object sender, EventArgs e)
         {
-            if (Visibility == Visibility.Visible)
-            {
-                Hide();
-                ShowInTaskbar = false;
-            }
+            _closed = true;
+            _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _viewModel.OnLanguageChangeCompleted -= OnLanguageChanged;
+            _viewModel.OnNavigateUriCommandCompleted -= OnNavigateUriCommandCompleted;
+            _viewModel.OnOptimizeCommandCompleted -= OnOptimizeCommandCompleted;
+            Localizer.StaticPropertyChanged -= OnLocalizerChanged;
+            Monitoring.PropertyChanged -= OnMonitoringChanged;
+            if (_overlay != null) _overlay.Close();
+            if (_settings != null) _settings.Dispose();
+            Monitoring.Dispose();
         }
-
-        /// <summary>
-        /// Called when the add process to exclusion list command is completed.
-        /// </summary>
-        private void OnAddProcessToExclusionListCommandCompleted()
+        private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
-            ProcessExclusionScrollViewer.ScrollToEnd();
+            if (e.PropertyName == "CompactMode") ApplyCompactMode(_viewModel.CompactMode);
         }
-
-        /// <summary>
-        /// Called when the close button is clicked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="RoutedEventArgs"/> instance containing the event data.</param>
+        private void OnLocalizerChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (_closed) return;
+            if (!Dispatcher.CheckAccess()) { Dispatcher.BeginInvoke(new Action(OnLanguageChanged)); return; }
+            OnLanguageChanged();
+        }
+        private void OnLanguageChanged() { if (!_closed) RefreshColumnHeaders(); }
+        private void OnWindowVisibleChanged(object sender, DependencyPropertyChangedEventArgs e) { UpdateDemand(); }
+        private void OnWindowStateChanged(object sender, EventArgs e) { UpdateDemand(); }
+        private void CloseToTheNotificationArea() { Hide(); ShowInTaskbar = false; }
         private void OnCloseButtonClick(object sender, RoutedEventArgs e)
         {
-            if (Settings.CloseToTheNotificationArea)
-            {
-                SetFocusTo(Optimize);
-
-                CloseToTheNotificationArea();
-
-                App.ReleaseMemory();
-            }
-            else
-                App.Shutdown();
+            if (Settings.CloseToTheNotificationArea) CloseToTheNotificationArea();
+            else App.Shutdown();
         }
-
-        /// <summary>
-        /// Called when a combo box is right-clicked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="MouseButtonEventArgs"/> instance containing the event data.</param>
-        private void OnComboBoxMouseRightButtonUp(object sender, MouseButtonEventArgs e)
-        {
-            SetFocusTo(Optimize);
-        }
-
-        /// <summary>
-        /// Called when the compact mode button is clicked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="RoutedEventArgs"/> instance containing the event data.</param>
-        private void OnCompactModeButtonClick(object sender, RoutedEventArgs e)
-        {
-            SetFocusTo(Optimize);
-        }
-
-        /// <summary>
-        /// Called when the donate menu item is clicked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="RoutedEventArgs"/> instance containing the event data.</param>
-        private void OnDonateMenuItemClick(object sender, RoutedEventArgs e)
-        {
-            var window = new DonationWindow(this);
-
-            window.ShowDialog();
-
-            SetFocusTo(Optimize);
-        }
-
-        /// <summary>
-        /// Called when the help button is clicked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="RoutedEventArgs"/> instance containing the event data.</param>
+        private void OnMinimizeButtonClick(object sender, RoutedEventArgs e) { WindowState = WindowState.Minimized; }
         private void OnHelpButtonClick(object sender, RoutedEventArgs e)
         {
             var button = (Button)sender;
-            var contextMenu = button.Resources["HelpContextMenu"] as ContextMenu;
-
-            if (contextMenu != null)
+            var menu = button.Resources["HelpContextMenu"] as ContextMenu;
+            if (menu == null) return;
+            menu.DataContext = _viewModel;
+            menu.Placement = PlacementMode.Bottom; menu.PlacementTarget = button; menu.IsOpen = true;
+        }
+        private void OnDonateMenuItemClick(object sender, RoutedEventArgs e)
+        { new DonationWindow(this).ShowDialog(); SetFocusTo(Optimize); }
+        private void OnResetSettingsToDefaultConfigurationClick(object sender, RoutedEventArgs e)
+        {
+            var dialog = new MessageDialog(this, Localizer.String.ResetConfirmation, Enums.Dialog.Button.No, Enums.Dialog.Button.Yes);
+            if (dialog.ShowDialog() == true && _viewModel.ResetSettingsToDefaultConfigurationCommand.CanExecute(null))
             {
-                contextMenu.IsOpen = true;
-                contextMenu.Placement = PlacementMode.Bottom;
-                contextMenu.PlacementTarget = button;
+                _viewModel.ResetSettingsToDefaultConfigurationCommand.Execute(null);
+                Monitoring.ReloadOptions();
             }
-        }
-
-        /// <summary>
-        /// Called when the help button receives a right mouse button down event.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="MouseButtonEventArgs"/> instance containing the event data.</param>
-        private void OnHelpButtonPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            SetFocusTo(Optimize);
-            e.Handled = true;
-        }
-
-        /// <summary>
-        /// Called when the minimize button is clicked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="RoutedEventArgs"/> instance containing the event data.</param>
-        private void OnMinimizeButtonClick(object sender, RoutedEventArgs e)
-        {
-            SetFocusTo(Optimize);
-
-            WindowState = WindowState.Minimized;
-        }
-
-        /// <inheritdoc/>
-        protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
-        {
-            if (e == null)
-                throw new ArgumentNullException("e");
-
-            base.OnMouseLeftButtonDown(e);
-
-            if (e.Handled || e.OriginalSource is ResizeGrip || e.Source is ResizeGrip)
-                return;
-
-            DragMove();
-        }
-
-        /// <summary>
-        /// Called when the navigate URI command is completed.
-        /// </summary>
-        private void OnNavigateUriCommandCompleted()
-        {
             SetFocusTo(Optimize);
         }
-
-        /// <summary>
-        /// Called when the optimize command is completed.
-        /// </summary>
+        private void OnNavigateUriCommandCompleted() { SetFocusTo(Optimize); }
         private void OnOptimizeCommandCompleted()
         {
             if (Settings.CloseAfterOptimization)
             {
-                if (Settings.CloseToTheNotificationArea)
-                {
-                    SetFocusTo(Optimize, force: true);
-                    CloseToTheNotificationArea();
-                }
+                if (Settings.CloseToTheNotificationArea) CloseToTheNotificationArea();
                 else
                 {
-                    // This runs on the UI thread, so sleeping here froze the window for a full
-                    // second after every optimization. A timer gives the same grace period
-                    // (letting the tray notification appear) while the UI keeps pumping.
-                    var shutdownDelay = new System.Windows.Threading.DispatcherTimer
-                    {
-                        Interval = TimeSpan.FromMilliseconds(1000)
-                    };
-
-                    shutdownDelay.Tick += (sender, args) =>
-                    {
-                        shutdownDelay.Stop();
-                        App.Shutdown();
-                    };
-
-                    shutdownDelay.Start();
+                    var delay = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+                    delay.Tick += delegate { delay.Stop(); App.Shutdown(); }; delay.Start();
                 }
             }
             else
             {
                 _viewModel.IsBusy = false;
-                
-             // Wait for the button to be enabled before trying to refocus it
-           // The button is disabled while IsOptimizationRunning = true
-                Dispatcher.BeginInvoke(new Action(() =>
-             {
-              SetFocusTo(Optimize, force: true);
-           }), System.Windows.Threading.DispatcherPriority.Loaded);
- }
+                Dispatcher.BeginInvoke(new Action(delegate { SetFocusTo(Optimize); }), DispatcherPriority.Loaded);
+            }
         }
-
-        /// <summary>
-        /// Called when the processes dropdown is opened.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        private void OnProcessesDropDownOpened(object sender, EventArgs e)
-        {
-            _viewModel.RaisePropertyChanged(() => _viewModel.Processes);
-        }
-
-        /// <summary>
-        /// Called when the reset settings to default configuration menu item is clicked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="RoutedEventArgs"/> instance containing the event data.</param>
-        private void OnResetSettingsToDefaultConfigurationClick(object sender, RoutedEventArgs e)
-        {
-            var window = new MessageDialog(this, Localizer.String.ResetConfirmation, Enums.Dialog.Button.No, Enums.Dialog.Button.Yes);
-
-            var result = window.ShowDialog();
-
-            if (result == true && _viewModel.ResetSettingsToDefaultConfigurationCommand.CanExecute(null))
-                _viewModel.ResetSettingsToDefaultConfigurationCommand.Execute(null);
-
-            SetFocusTo(Optimize);
-        }
-
-        /// <summary>
-        /// Called when a tray icon checkbox is checked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="RoutedEventArgs"/> instance containing the event data.</param>
-        private void OnTrayIconItemCheckBoxChecked(object sender, RoutedEventArgs e)
-        {
-            var checkBox = sender as CheckBox;
-            if (checkBox == null)
-                return;
-
-            SetFocusTo(checkBox);
-        }
-
-        /// <summary>
-        /// Called when a tray icon checkbox is unchecked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="RoutedEventArgs"/> instance containing the event data.</param>
-        private void OnTrayIconItemCheckBoxUnchecked(object sender, RoutedEventArgs e)
-        {
-            var checkBox = sender as CheckBox;
-            if (checkBox == null)
-                return;
-
-            SetFocusTo(checkBox);
-        }
-
-        /// <summary>
-        /// Called when the window is clicked.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="MouseButtonEventArgs"/> instance containing the event data.</param>
         private void OnWindowMouseDown(object sender, MouseButtonEventArgs e)
         {
-            SetFocusTo(Optimize);
+            // Only the title bar drags. Table selection, scrolling and text editing retain focus.
+            if (e.ChangedButton == MouseButton.Left && e.GetPosition(this).Y < 58 && e.LeftButton == MouseButtonState.Pressed)
+                DragMove();
         }
-
-        /// <summary>
-        /// Called when the window is closed.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="EventArgs"/> instance containing the event data.</param>
-        private void OnMainWindowClosed(object sender, EventArgs e)
+        private static void SetFocusTo(UIElement element)
         {
-            if (_viewModel != null)
-                _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
-        }
-
-        /// <summary>
-        /// Called when the window is loaded.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="RoutedEventArgs"/> instance containing the event data.</param>
-        private void OnMainWindowLoaded(object sender, RoutedEventArgs e)
-        {
-            SetFocusTo(Optimize);
-            ApplyCompactMode(_viewModel != null && _viewModel.CompactMode);
-        }
-
-        /// <summary>
-        /// Called when the view model changes.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="PropertyChangedEventArgs"/> instance containing the event data.</param>
-        private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
-        {
-            if (e.PropertyName == "CompactMode")
-                ApplyCompactMode(_viewModel.CompactMode);
-        }
-
-        /// <summary>
-        /// Called when the window visibility changes.
-        /// </summary>
-        /// <param name="sender">The sender.</param>
-        /// <param name="e">The <see cref="DependencyPropertyChangedEventArgs"/> instance containing the event data.</param>
-        private void OnWindowVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
-        {
-            foreach (var window in OwnedWindows.Cast<View>().Where(window => window != null && !window.IsDialog))
-            {
-                if (window.IsLoaded)
-                {
-                    if (IsVisible)
-                        window.Visibility = Visibility.Visible;
-                    else
-                        window.Visibility = Visibility.Hidden;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Sets the focus to the specified element.
-        /// </summary>
-        /// <param name="element">The element to focus.</param>
-        /// <param name="force">If set to <c>true</c>, forces focus even if already focused.</param>
-        private void SetFocusTo(object element, bool force = false)
-        {
-            var uiElement = element as UIElement;
-            var inputElement = element as IInputElement;
-
-            if (uiElement == null || inputElement == null)
-                return;
-
-            if (!uiElement.IsEnabled || !uiElement.IsVisible || !uiElement.Focusable)
-                return;
-
-            if (!force && uiElement.IsFocused)
-                return;
-
-            if (force && uiElement.IsFocused)
-            {
-                // Move focus to the window itself to ensure button loses focus
-                Focus();
-
-                // Then re-focus the element after a brief delay to allow animation state to reset
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    Keyboard.Focus(uiElement);
-                    FocusManager.SetFocusedElement(this, inputElement);
-                }), System.Windows.Threading.DispatcherPriority.Input);
-            }
-            else
-            {
-                // Normal focus - immediate
-                Keyboard.ClearFocus();
-                Keyboard.Focus(uiElement);
-                FocusManager.SetFocusedElement(this, inputElement);
-            }
+            if (element != null && element.IsEnabled && element.IsVisible && element.Focusable) Keyboard.Focus(element);
         }
     }
 }

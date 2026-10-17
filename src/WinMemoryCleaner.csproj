@@ -191,6 +191,20 @@
       <SubType>Component</SubType>
     </Compile>
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Core\Monitoring\*.cs" />
+    <Compile Include="Model\Monitoring\*.cs" />
+    <Compile Include="Service\Monitoring\*.cs" />
+    <Compile Include="Interfaces\IResourceMonitor.cs" />
+    <Compile Include="Interop\MonitoringNativeMethods.cs" />
+    <Compile Include="ViewModel\MonitoringViewModel.cs" />
+    <Compile Include="View\Control\SettingsPanel.xaml.cs"><DependentUpon>SettingsPanel.xaml</DependentUpon></Compile>
+    <Compile Include="View\Window\MonitoringOverlay.xaml.cs"><DependentUpon>MonitoringOverlay.xaml</DependentUpon></Compile>
+    <Page Include="View\Control\SettingsPanel.xaml"><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="View\Window\MonitoringOverlay.xaml"><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Page Include="Resources\MonitoringStyles.xaml"><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>
+    <Reference Include="System.Management" />
+  </ItemGroup>
   <!-- Tests are built separately; the portable release has no NUnit dependency. -->
   <ItemGroup Condition=" '$(CommunityTestBuild)' == 'true' ">
     <Compile Include="Test\*.cs" />

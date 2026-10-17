@@ -1,23 +1,34 @@
-﻿namespace WinMemoryCleaner
+namespace WinMemoryCleaner
 {
     /// <summary>
     /// Computer
     /// </summary>
-    public class Computer
+    public class Computer : ObservableObject
     {
+        private Memory _memory;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="Computer" /> class.
         /// </summary>
         public Computer()
         {
-            Memory = new Memory();
+            _memory = new Memory();
             OperatingSystem = new OperatingSystem();
         }
 
         /// <summary>
-        /// Memory
+        /// Memory. Replacements notify <c>Memory</c> only, so bindings rooted at
+        /// <c>Computer.Memory</c> refresh without invalidating every <c>Computer</c> binding.
         /// </summary>
-        public Memory Memory { get; set; }
+        public Memory Memory
+        {
+            get { return _memory; }
+            set
+            {
+                _memory = value;
+                RaisePropertyChanged("Memory");
+            }
+        }
 
         /// <summary>
         /// Operating System

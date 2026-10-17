@@ -2,7 +2,7 @@
 > **Unofficial community continuation.** This repository continues [IgorMundstein/WinMemoryCleaner](https://github.com/IgorMundstein/WinMemoryCleaner) (last upstream activity December 2025). It is **not** affiliated with or endorsed by the original author and is **not** an official handover.
 >
 > - Original work © **Igor Mundstein**, **GPL-3.0** — full history, license, and attribution are preserved; see [CREDITS.md](CREDITS.md) and [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md).
-> - Community binary: `WinMemoryCleaner.Community.exe` ("WinMemoryCleaner Community"), independent settings key `HKLM\SOFTWARE\WinMemoryCleaner.Community`, **auto-update disabled** until a verified community release channel exists.
+> - Community binary: `WinMemoryCleaner.Community.exe` ("WinMemoryCleaner Community"), independent settings key `HKLM\SOFTWARE\WinMemoryCleaner.Community`, **auto-update pulls from this repository's checksum-verified release channel** (the SHA-256 sidecar is verified before anything is installed).
 > - Community builds are **unsigned**; the signed official binary remains the [upstream release](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest).
 
 # Windows Memory Cleaner
@@ -82,12 +82,30 @@ powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -Package -
 | **Start&nbsp;Menu&nbsp;Shortcut** | Automatically creates a Start Menu shortcut for quick access to the application. |
 | **Start&nbsp;Minimized** | The application will start minimized directly to the system tray. A single-click on the tray icon restores it. |
 | **Tray&nbsp;Icon&nbsp;Customization** | Customize tray icon colors (background, text, warning, danger, optimizing), display memory usage, set threshold levels, and enable middle-click optimization. |
+| **Resource Monitoring** | Live CPU / GPU usage and a physical-memory gauge with the data source named for every readout; refresh interval selectable from 1 / 2 / 5 seconds. |
+| **Process Insights & Safe Actions** | Searchable, sortable process list (memory, normalized CPU, GPU usage, dedicated VRAM) with identity-verified working-set trim and guarded termination of the selected process. |
+| **Monitoring Overlay** | Compact always-on-top strip — horizontal by default, switchable to vertical — that is click-through, never steals focus, saves its position, and offers a "monitor only" mode that hides the whole main window. |
+| **Real CPU / GPU Temperatures** | Read-only temperatures from identified sources (ASUS System Control Interface CPU sensor, NVIDIA NVAPI, optional LibreHardwareMonitor); unavailable items show a reason instead of a fake 0 °C. |
 
 ### ↕️ Compact Mode
 
 The Compact Mode feature allows you to collapse the main window into a minimal view for at-a-glance monitoring. By clicking the arrow next to the minimize button, the UI shrinks to show only the most essential memory statistics and controls. This mode is ideal for users who want to keep an eye on their system’s memory usage without occupying much screen space. Toggle Compact Mode on or off at any time to suit your workflow.
 
 [![](./docs/assets/images/main-window-compact.png)](#%EF%B8%8F-compact-mode)
+
+### 📊 Community Monitoring
+
+On top of the original cleaner, the community edition adds an on-demand monitoring layer — everything below is **read-only towards your hardware**: no driver is installed and no fan, power or performance-mode command is ever sent.
+
+- **Resource overview**: a physical-memory gauge plus paired CPU / GPU usage readouts, each labelled with its data source (Windows GetSystemTimes, Windows PDH).
+- **Process page**: enumerate every visible process (duplicate names keep separate PID rows), search by name or PID, sort by any metric; unavailable values sort last and never pretend to be zero.
+- **Safe process actions**: release the working set of a selected process, or end it after an explicit confirmation dialog. Identity checks and the operation itself use the same native process handle, so PID reuse cannot redirect an action; critical, protected and own processes are refused.
+- **Compact monitoring strip**: replaces the old fixed-width floating panel with three tight CPU / GPU / RAM groups — about 316×26 DIP horizontal, 118×78 DIP vertical with all items enabled. It stays topmost, is mouse-through by default, never takes focus, supports drag positioning and per-monitor corner placement, and both the layout (horizontal / vertical) and position persist.
+- **Monitor-only mode**: one click enables the strip and hides the main window; the tray icon reopens settings. Nothing else about your close-button preference changes, and sampling continues while the window is hidden.
+- **Honest temperatures**: CPU temperature is read through the already-installed ASUS System Control Interface driver (sensor `0x00120094`), with LibreHardwareMonitor as the fallback; GPU temperature prefers NVIDIA NVAPI. ACPI thermal-zone values are never labelled CPU temperature, and a missing source shows "unavailable" with the reason — never a fabricated 0 °C.
+- **On-demand sampling**: with the overlay off and the window hidden, CPU/GPU, temperature and per-process sampling stop; only the tray memory display and the auto-optimization check keep running at a low cadence.
+
+Current verification (2026-10-17): full safe test suite 430/430 and backend suite 49/49 with zero errors, 529 real-window interaction checks on the final Release binary, and a single 30 s warm-up + 60 s measurement of the temperature-enabled strip (≈68 MiB private, ≈0.034% own CPU, UI dispatch p95 ≈0.53 ms). See the [Chinese user guide](docs/monitoring-guide.zh-CN.md), the [verification report](docs/compact-monitoring-report.zh-CN.md) and the [implementation ledger](docs/monitoring-progress.md); raw logs and screenshots are produced locally under `build\monitoring-verification\` by `tools\build-monitoring.ps1` and `tools\verify-monitoring.ps1` (that folder is git-ignored).
 
 ### 🔔 System Tray (Notification Area)
 

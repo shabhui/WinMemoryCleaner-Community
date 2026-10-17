@@ -34,6 +34,8 @@ namespace WinMemoryCleaner
         private byte _optimizationProgressTotal = byte.MaxValue;
         private byte _optimizationProgressValue = byte.MinValue;
         private string _selectedProcess;
+        private ObservableCollection<string> _processes = new ObservableCollection<string>();
+        private volatile int _memoryRefreshSeconds = 5;
         private ObservableCollection<ObservableItem<bool>> _trayIconItems;
 
         #endregion
@@ -362,8 +364,6 @@ namespace WinMemoryCleaner
 
                     RaisePropertyChanged();
                     RaisePropertyChanged(() => Title);
-
-                    App.ReleaseMemory();
                 }
                 finally
                 {
@@ -541,7 +541,6 @@ namespace WinMemoryCleaner
                     if (!App.IsInDesignMode)
                     {
                         Computer.Memory = _computerService.Memory;
-                        RaisePropertyChanged(() => Computer);
 
                         _trayIconItems = null;
 
@@ -819,17 +818,80 @@ namespace WinMemoryCleaner
         {
             get
             {
-                var processes = new ObservableCollection<string>(Process.GetProcesses()
-                    .Where(process => process != null && !process.ProcessName.Equals(Constants.App.Name) && !Settings.ProcessExclusionList.Contains(process.ProcessName, StringComparer.OrdinalIgnoreCase))
-                    .Select(process => process.ProcessName.ToLower(Localizer.Culture).Replace(".exe", string.Empty))
-                    .Distinct()
-                    .OrderBy(name => name));
-
-                if (!processes.Contains(SelectedProcess, StringComparer.OrdinalIgnoreCase))
-                    SelectedProcess = processes.FirstOrDefault();
-
-                return processes;
+                // Binding reads return the cached snapshot; enumeration happens only in RefreshProcesses.
+                return _processes;
             }
+        }
+
+        /// <summary>
+        /// Refreshes the exclusion candidate snapshot. Enumerating processes is expensive, so it happens
+        /// only on this explicit call (picker opened, exclusion list changed), never in the getter.
+        /// </summary>
+        public void RefreshProcesses()
+        {
+            var names = new List<string>();
+
+            try
+            {
+                foreach (var process in Process.GetProcesses())
+                {
+                    try
+                    {
+                        var processName = process.ProcessName;
+
+                        if (!processName.Equals(Constants.App.Name, StringComparison.OrdinalIgnoreCase) && !Settings.ProcessExclusionList.Contains(processName, StringComparer.OrdinalIgnoreCase))
+                            names.Add(processName.ToLower(Localizer.Culture).Replace(".exe", string.Empty));
+                    }
+                    catch (Exception e)
+                    {
+                        // The candidate may have exited between snapshot and read; keep every other name.
+                        Logger.Debug(e);
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            process.Dispose();
+                        }
+                        catch
+                        {
+                            // ignored
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Logger.Debug(e);
+
+                return;
+            }
+
+            _processes = new ObservableCollection<string>(names.Distinct().OrderBy(name => name));
+
+            if (!_processes.Contains(SelectedProcess, StringComparer.OrdinalIgnoreCase))
+                SelectedProcess = _processes.FirstOrDefault();
+
+            RaisePropertyChanged(() => Processes);
+        }
+
+        /// <summary>
+        /// Gets the shared memory source refresh cadence in seconds. Supported choices are 1, 2 and 5;
+        /// the hidden default is 5.
+        /// </summary>
+        public int MemoryRefreshSeconds
+        {
+            get { return _memoryRefreshSeconds; }
+        }
+
+        /// <summary>
+        /// Sets the shared memory source refresh cadence. Only 1, 2 and 5 seconds are supported;
+        /// every other value normalizes to 2.
+        /// </summary>
+        /// <param name="seconds">The refresh interval in seconds.</param>
+        public void SetMemoryRefreshInterval(int seconds)
+        {
+            _memoryRefreshSeconds = MonitoringPolicy.NormalizeRefresh(seconds);
         }
 
         /// <summary>
@@ -1597,7 +1659,7 @@ namespace WinMemoryCleaner
                     {
                         Settings.Save();
 
-                        RaisePropertyChanged(() => Processes);
+                        RefreshProcesses();
                         RaisePropertyChanged(() => ProcessExclusionList);
 
                 if (OnAddProcessToExclusionListCommandCompleted != null)
@@ -1729,7 +1791,7 @@ namespace WinMemoryCleaner
                             // Update memory info
                             Computer.Memory = _computerService.Memory;
 
-                            RaisePropertyChanged(() => Computer);
+                            RaisePropertyChanged(() => PhysicalMemoryHeader);
                             RaisePropertyChanged(() => VirtualMemoryHeader);
 
                             NotificationService.Update(Computer.Memory, IsOptimizationRunning);
@@ -1737,7 +1799,7 @@ namespace WinMemoryCleaner
                     }
 
                     // Delay
-                    if (token.WaitHandle.WaitOne(5000))
+                    if (token.WaitHandle.WaitOne(_memoryRefreshSeconds * 1000))
                         break;
                 }
                 catch (Exception e)
@@ -1785,7 +1847,8 @@ namespace WinMemoryCleaner
 
                     // Update memory info
                     Computer.Memory = _computerService.Memory;
-                    RaisePropertyChanged(() => Computer);
+                    RaisePropertyChanged(() => PhysicalMemoryHeader);
+                    RaisePropertyChanged(() => VirtualMemoryHeader);
 
                     // Notification
                     if (Settings.ShowOptimizationNotifications)
@@ -1928,7 +1991,7 @@ namespace WinMemoryCleaner
                 if (Settings.ProcessExclusionList.Remove(process))
                     Settings.Save();
 
-                RaisePropertyChanged(() => Processes);
+                RefreshProcesses();
                 RaisePropertyChanged(() => ProcessExclusionList);
 
                 if (OnRemoveProcessFromExclusionListCommandCompleted != null)

@@ -1,0 +1,44 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Style x:Key="MonitorButton" TargetType="Button">
+        <Setter Property="Padding" Value="14,8"/><Setter Property="MinHeight" Value="34"/>
+        <Setter Property="Foreground" Value="{DynamicResource SecondaryForeground}"/><Setter Property="Background" Value="{DynamicResource SecondaryBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource SecondaryBorder}"/><Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+            <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3">
+                <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+                <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="ProcessActionButton" TargetType="Button" BasedOn="{StaticResource MonitorButton}">
+        <Style.Triggers><DataTrigger Binding="{Binding SelectedProcess}" Value="{x:Null}"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers>
+    </Style>
+    <Style x:Key="MonitorNav" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{DynamicResource SecondaryDisabled}"/><Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Padding" Value="18,10"/><Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton">
+            <Border x:Name="NavBorder" Background="{TemplateBinding Background}" BorderThickness="0,0,0,2" BorderBrush="Transparent">
+                <ContentPresenter Margin="{TemplateBinding Padding}" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True"><Setter Property="Foreground" Value="{DynamicResource SecondaryForeground}"/><Setter TargetName="NavBorder" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="NavBorder" Property="Background" Value="{DynamicResource SecondaryBackground}"/></Trigger>
+                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{DynamicResource Accent}"/></Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <Style x:Key="MonitorPanel" TargetType="Border"><Setter Property="Background" Value="{DynamicResource SecondaryBackground}"/><Setter Property="Padding" Value="20"/><Setter Property="CornerRadius" Value="6"/></Style>
+    <Style x:Key="MonitorLabel" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource SecondaryDisabled}"/><Setter Property="Margin" Value="0,0,0,8"/></Style>
+    <Style x:Key="MonitorReading" TargetType="TextBlock"><Setter Property="FontSize" Value="28"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Margin" Value="0,0,0,10"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style>
+    <Style x:Key="MonitorNote" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource SecondaryDisabled}"/><Setter Property="TextWrapping" Value="Wrap"/><Setter Property="Margin" Value="0,8,0,8"/></Style>
+    <Style x:Key="ProcessCell" TargetType="TextBlock"><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Padding" Value="8,0"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style>
+    <Style x:Key="ProcessNumber" TargetType="TextBlock" BasedOn="{StaticResource ProcessCell}"><Setter Property="TextAlignment" Value="Right"/></Style>
+    <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{DynamicResource SecondaryBackground}"/><Setter Property="Foreground" Value="{DynamicResource SecondaryDisabled}"/><Setter Property="Padding" Value="8,10"/><Setter Property="BorderBrush" Value="{DynamicResource PrimaryBorder}"/><Setter Property="BorderThickness" Value="0,0,0,1"/></Style>
+    <Style TargetType="DataGridCell"><Setter Property="BorderThickness" Value="0"/><Setter Property="Foreground" Value="{DynamicResource SecondaryForeground}"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="Black"/></Trigger></Style.Triggers></Style>
+    <Style TargetType="DataGridRow"><Setter Property="Background" Value="{DynamicResource PrimaryBackground}"/><Setter Property="MinHeight" Value="32"/></Style>
+</ResourceDictionary>
