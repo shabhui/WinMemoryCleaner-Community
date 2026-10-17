@@ -17,7 +17,7 @@ namespace WinMemoryCleaner
         [DllImport("psapi.dll",SetLastError=true)]internal static extern bool EmptyWorkingSet(IntPtr handle);
         [DllImport("kernel32.dll",SetLastError=true)]internal static extern bool TerminateProcess(IntPtr handle,uint exitCode);
         [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]internal static extern IntPtr LoadLibrary(string path);
-        [DllImport("kernel32.dll",CharSet=CharSet.Ansi,ExactSpelling=true)]internal static extern IntPtr GetProcAddress(IntPtr module,[MarshalAs(UnmanagedType.LPStr)]string name);
+        [DllImport("kernel32.dll",CharSet=CharSet.Ansi,ExactSpelling=true)]internal static extern IntPtr GetProcAddress(IntPtr module,byte[] name);
         [DllImport("kernel32.dll")]internal static extern bool FreeLibrary(IntPtr module);
         [StructLayout(LayoutKind.Sequential)]internal struct UnicodeString { internal ushort Length,MaximumLength;internal IntPtr Buffer; }
         // Modern SYSTEM_PROCESS_INFORMATION prefix: pointer-sized fields preserve x86/x64 offsets.

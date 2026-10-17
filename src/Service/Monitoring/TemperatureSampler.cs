@@ -74,7 +74,7 @@ namespace WinMemoryCleaner
             {
                 _module=MonitoringNativeMethods.LoadLibrary(Path.Combine(Environment.SystemDirectory,IntPtr.Size==8?"nvapi64.dll":"nvapi.dll"));
                 if(_module==IntPtr.Zero)return false;
-                var pointer=MonitoringNativeMethods.GetProcAddress(_module,"nvapi_QueryInterface");
+                var pointer=MonitoringNativeMethods.GetProcAddress(_module,Encoding.ASCII.GetBytes("nvapi_QueryInterface"+'\0'));
                 if(pointer==IntPtr.Zero){CloseNvidia();return false;}
                 _query=(QueryInterface)Marshal.GetDelegateForFunctionPointer(pointer,typeof(QueryInterface));
                 var initialize=(Initialize)Get(0x0150E828,typeof(Initialize));

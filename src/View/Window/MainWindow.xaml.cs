@@ -22,6 +22,7 @@ namespace WinMemoryCleaner
         private SettingsPanel _settings;
         private bool? _compactModeApplied;
         private bool _closed;
+        private bool _disposed;
         private bool _actionRunning;
         private int _page;
         private double _lastExpandedHeight = ExpandedHeight;
@@ -214,6 +215,15 @@ namespace WinMemoryCleaner
         /// <summary>Releases the lazily created settings surface and the overlay window.</summary>
         public void Dispose()
         {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+        /// <summary>Cleans up managed subscriptions; no native resources exist.</summary>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (!disposing) return;
             if (_overlay != null) { _overlay.Close(); _overlay = null; }
             if (_settings != null) { _settings.Dispose(); _settings = null; }
         }
