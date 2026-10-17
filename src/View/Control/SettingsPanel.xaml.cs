@@ -40,9 +40,19 @@ namespace WinMemoryCleaner
             if (!slider.IsMoveToPointEnabled || track == null || track.Thumb == null || track.Thumb.IsMouseOver) return;
             track.Thumb.RaiseEvent(new MouseButtonEventArgs(e.MouseDevice, e.Timestamp, MouseButton.Left) { RoutedEvent = MouseLeftButtonDownEvent });
         }
+        private bool _disposed;
         /// <summary>Releases subscriptions to the retained cleaner model.</summary>
         public void Dispose()
         {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+        /// <summary>Cleans up managed event subscriptions; no native resources exist.</summary>
+        protected virtual void Dispose(bool disposing)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (!disposing) return;
             if (_viewModel != null) _viewModel.OnAddProcessToExclusionListCommandCompleted -= OnExclusionAdded;
             _viewModel = null;
             DataContextChanged -= OnContextChanged;

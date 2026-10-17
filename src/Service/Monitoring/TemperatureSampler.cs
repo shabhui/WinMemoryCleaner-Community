@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
+using System.Globalization;
 using System.Management;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -18,6 +19,7 @@ namespace WinMemoryCleaner
         private Unload _unload;
         private readonly List<IntPtr> _handles=new List<IntPtr>();
         private DateTime _nvRetry,_wmiRetry,_gateUntil;
+        private bool _disposed;
         /// <summary>Test seam. Null = real check.</summary>
         internal Func<bool> ProviderRunning { get; set; }
         /// <summary>Number of real LibreHardwareMonitor WMI attempts in this process.</summary>
@@ -134,8 +136,8 @@ namespace WinMemoryCleaner
                     foreach(ManagementObject value in values)
                     using(value)
                     {
-                        string type=Convert.ToString(value["HardwareType"]);
-                        if(type=="Cpu"||type.StartsWith("Gpu",StringComparison.OrdinalIgnoreCase))hardware[Convert.ToString(value["Identifier"])]=type+" / "+Convert.ToString(value["Name"]);
+                        string type=Convert.ToString(value["HardwareType"],CultureInfo.InvariantCulture);
+                        if(type=="Cpu"||type.StartsWith("Gpu",StringComparison.OrdinalIgnoreCase))hardware[Convert.ToString(value["Identifier"],CultureInfo.InvariantCulture)]=type+" / "+Convert.ToString(value["Name"],CultureInfo.InvariantCulture);
                     }
                 }
                 double? cpuValue=null,gpuValue=null;string cpuSource=null,gpuSource=null;
@@ -145,11 +147,11 @@ namespace WinMemoryCleaner
                     foreach(ManagementObject value in values)
                     using(value)
                     {
-                        string owner;if(!hardware.TryGetValue(Convert.ToString(value["Parent"]),out owner))continue;
+                        string owner;if(!hardware.TryGetValue(Convert.ToString(value["Parent"],CultureInfo.InvariantCulture),out owner))continue;
                         if(value["Value"]==null)continue;
-                        double reading=Convert.ToDouble(value["Value"]);
+                        double reading=Convert.ToDouble(value["Value"],CultureInfo.InvariantCulture);
                         if(double.IsNaN(reading)||double.IsInfinity(reading)||reading<1||reading>150)continue;
-                        string source="LibreHardwareMonitor WMI / "+owner+" / "+Convert.ToString(value["Name"]);
+                        string source="LibreHardwareMonitor WMI / "+owner+" / "+Convert.ToString(value["Name"],CultureInfo.InvariantCulture);
                         if(owner.StartsWith("Cpu /",StringComparison.Ordinal)&&(!cpuValue.HasValue||reading>cpuValue.Value)){cpuValue=reading;cpuSource=source;}
                         else if(owner.StartsWith("Gpu",StringComparison.Ordinal)&&(!gpuValue.HasValue||reading>gpuValue.Value)){gpuValue=reading;gpuSource=source;}
                     }
@@ -196,7 +198,15 @@ namespace WinMemoryCleaner
             if(_module!=IntPtr.Zero){MonitoringNativeMethods.FreeLibrary(_module);_module=IntPtr.Zero;}
         }
         internal void Suspend(){CloseNvidia();if(_asus!=null)_asus.Suspend();}
-        public void Dispose(){Suspend();if(_asus!=null)_asus.Dispose();}
+        ~TemperatureSampler(){Dispose(false);}
+        public void Dispose(){Dispose(true);GC.SuppressFinalize(this);}
+        private void Dispose(bool disposing)
+        {
+            if(_disposed)return;
+            _disposed=true;
+            if(disposing){Suspend();if(_asus!=null)_asus.Dispose();}
+            else CloseNvidia();
+        }
     }
 }
 #pragma warning restore 1591

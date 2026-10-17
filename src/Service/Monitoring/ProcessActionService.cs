@@ -15,12 +15,12 @@ namespace WinMemoryCleaner
     }
     public interface IProcessActionNative
     {
-        IntPtr Open(int id,bool terminate,out int error);
-        bool CreationTime(IntPtr handle,out long value,out int error);
-        bool HasExited(IntPtr handle,out bool value,out int error);
-        bool Safety(IntPtr handle,out bool critical,out byte protection,out int error);
-        bool Trim(IntPtr handle,out int error);
-        bool Terminate(IntPtr handle,out int error);
+        IntPtr Open(int id,bool terminate,out int errorCode);
+        bool CreationTime(IntPtr handle,out long value,out int errorCode);
+        bool HasExited(IntPtr handle,out bool value,out int errorCode);
+        bool Safety(IntPtr handle,out bool critical,out byte protection,out int errorCode);
+        bool Trim(IntPtr handle,out int errorCode);
+        bool Terminate(IntPtr handle,out int errorCode);
         void Close(IntPtr handle);
     }
     public sealed class ProcessActionService
@@ -70,37 +70,37 @@ namespace WinMemoryCleaner
     }
     internal sealed class ProcessActionNative : IProcessActionNative
     {
-        public IntPtr Open(int id,bool terminate,out int error)
+        public IntPtr Open(int id,bool terminate,out int errorCode)
         {
             var handle=MonitoringNativeMethods.OpenProcess(0x1000|0x100000|(terminate?1u:0x100u),false,id);
-            error=handle==IntPtr.Zero?Marshal.GetLastWin32Error():0;return handle;
+            errorCode=handle==IntPtr.Zero?Marshal.GetLastWin32Error():0;return handle;
         }
-        public bool CreationTime(IntPtr h,out long value,out int error)
+        public bool CreationTime(IntPtr h,out long value,out int errorCode)
         {
-            long exit,kernel,user;bool ok=MonitoringNativeMethods.GetProcessTimes(h,out value,out exit,out kernel,out user);error=ok?0:Marshal.GetLastWin32Error();return ok;
+            long exit,kernel,user;bool ok=MonitoringNativeMethods.GetProcessTimes(h,out value,out exit,out kernel,out user);errorCode=ok?0:Marshal.GetLastWin32Error();return ok;
         }
-        public bool HasExited(IntPtr h,out bool value,out int error)
+        public bool HasExited(IntPtr h,out bool value,out int errorCode)
         {
             uint result=MonitoringNativeMethods.WaitForSingleObject(h,0);value=result==0;
-            error=result==uint.MaxValue?Marshal.GetLastWin32Error():(result==0||result==258)?0:unchecked((int)result);
+            errorCode=result==uint.MaxValue?Marshal.GetLastWin32Error():(result==0||result==258)?0:unchecked((int)result);
             return result==0||result==258;
         }
-        public bool Safety(IntPtr h,out bool critical,out byte protection,out int error)
+        public bool Safety(IntPtr h,out bool critical,out byte protection,out int errorCode)
         {
-            critical=true;protection=255;error=0;
+            critical=true;protection=255;errorCode=0;
             try
             {
-                if(!MonitoringNativeMethods.IsProcessCritical(h,out critical)) { error=Marshal.GetLastWin32Error();return false; }
+                if(!MonitoringNativeMethods.IsProcessCritical(h,out critical)) { errorCode=Marshal.GetLastWin32Error();return false; }
             }
             catch(EntryPointNotFoundException)
             {
-                uint value;int returned;int status=MonitoringNativeMethods.ProcessCritical(h,29,out value,4,out returned);if(status!=0){error=status;return false;}critical=value!=0;
+                uint value;int returned;int status=MonitoringNativeMethods.ProcessCritical(h,29,out value,4,out returned);if(status!=0){errorCode=status;return false;}critical=value!=0;
             }
             int needed;int protectionStatus=MonitoringNativeMethods.ProcessProtection(h,61,out protection,1,out needed);
-            if(protectionStatus!=0){error=protectionStatus;return false;}return true;
+            if(protectionStatus!=0){errorCode=protectionStatus;return false;}return true;
         }
-        public bool Trim(IntPtr h,out int error) { bool ok=MonitoringNativeMethods.EmptyWorkingSet(h);error=ok?0:Marshal.GetLastWin32Error();return ok; }
-        public bool Terminate(IntPtr h,out int error) { bool ok=MonitoringNativeMethods.TerminateProcess(h,0);error=ok?0:Marshal.GetLastWin32Error();return ok; }
+        public bool Trim(IntPtr h,out int errorCode) { bool ok=MonitoringNativeMethods.EmptyWorkingSet(h);errorCode=ok?0:Marshal.GetLastWin32Error();return ok; }
+        public bool Terminate(IntPtr h,out int errorCode) { bool ok=MonitoringNativeMethods.TerminateProcess(h,0);errorCode=ok?0:Marshal.GetLastWin32Error();return ok; }
         public void Close(IntPtr h) { MonitoringNativeMethods.CloseHandle(h); }
     }
 }

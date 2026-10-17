@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.InteropServices;
 #pragma warning disable 1591
 namespace WinMemoryCleaner
@@ -63,7 +64,7 @@ namespace WinMemoryCleaner
                     }
                     finally{Marshal.FreeHGlobal(data);}
                 }
-                finally{D3DKMTCloseAdapter(ref adapter.Handle);}
+                finally{int closeResult=D3DKMTCloseAdapter(ref adapter.Handle);}
             }
             catch(EntryPointNotFoundException){return null;}
             catch(DllNotFoundException){return null;}
@@ -120,7 +121,7 @@ namespace WinMemoryCleaner
         }
         private void Fail(uint status)
         {
-            _failure=MetricValue.Missing(status==5?MetricStatus.AccessDenied:MetricStatus.Unsupported,"Windows PDH GPU counter status 0x"+status.ToString("X8"));
+            _failure=MetricValue.Missing(status==5?MetricStatus.AccessDenied:MetricStatus.Unsupported,"Windows PDH GPU counter status 0x"+status.ToString("X8",CultureInfo.InvariantCulture));
             CloseQuery();_retry=DateTime.UtcNow.AddSeconds(30);
         }
         private static uint ReadArray(IntPtr counter,uint format,Action<string,CounterValue> read)
@@ -165,7 +166,7 @@ namespace WinMemoryCleaner
             }
             return result;
         }
-        private void CloseQuery(){if(_query!=IntPtr.Zero)PdhCloseQuery(_query);_query=_engine=_memory=IntPtr.Zero;}
+        private void CloseQuery(){if(_query!=IntPtr.Zero){uint closeResult=PdhCloseQuery(_query);}_query=_engine=_memory=IntPtr.Zero;}
         internal void Suspend(){CloseQuery();_luids.Clear();}
         public void Dispose(){Suspend();}
     }

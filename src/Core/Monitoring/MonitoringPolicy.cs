@@ -16,6 +16,23 @@ namespace WinMemoryCleaner
             Processes = processes;
             Temperatures = temperatures;
         }
+        public static bool operator ==(MonitoringDemand left, MonitoringDemand right) { return left.Equals(right); }
+        public static bool operator !=(MonitoringDemand left, MonitoringDemand right) { return !left.Equals(right); }
+        public override bool Equals(object obj)
+        {
+            if (!(obj is MonitoringDemand)) return false;
+            var other = (MonitoringDemand)obj;
+            return CpuGpu == other.CpuGpu && Processes == other.Processes && Temperatures == other.Temperatures;
+        }
+        public bool Equals(MonitoringDemand other) { return CpuGpu == other.CpuGpu && Processes == other.Processes && Temperatures == other.Temperatures; }
+        public override int GetHashCode()
+        {
+            int hash = 17;
+            hash = hash * 31 + CpuGpu.GetHashCode();
+            hash = hash * 31 + Processes.GetHashCode();
+            hash = hash * 31 + Temperatures.GetHashCode();
+            return hash;
+        }
     }
 
     public static class MonitoringPolicy

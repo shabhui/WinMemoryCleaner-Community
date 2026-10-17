@@ -50,9 +50,9 @@ namespace WinMemoryCleaner
         public MonitorText Labels { get; private set; }
         public ListCollectionView ProcessesView { get; private set; }
         public IList<DisplayChoice> Displays { get; private set; }
-        public int[] RefreshChoices { get { return new[]{1,2,5}; } }
-        public string[] Corners { get { return new[]{Labels["TopLeft"],Labels["TopRight"],Labels["BottomLeft"],Labels["BottomRight"],Labels["Custom"]}; } }
-        public string[] OverlayLayouts { get { return new[]{Labels["Horizontal"],Labels["Vertical"]}; } }
+        public IList<int> RefreshChoices { get { return new List<int>{1,2,5}; } }
+        public IList<string> Corners { get { return new List<string>{Labels["TopLeft"],Labels["TopRight"],Labels["BottomLeft"],Labels["BottomRight"],Labels["Custom"]}; } }
+        public IList<string> OverlayLayouts { get { return new List<string>{Labels["Horizontal"],Labels["Vertical"]}; } }
         public int OverlayLayout
         {
             get { return _options.Layout; }
@@ -128,7 +128,7 @@ namespace WinMemoryCleaner
             if(!visible||!processes)
             {
                 _table.Clear(); SelectedProcess=null; RaisePropertyChanged("ProcessCount"); RaisePropertyChanged("ProcessCountText");
-                if(_last!=null) _last.Processes=null;
+                if(_last!=null) _last.Processes.Clear();
             }
             UpdateDemand();
         }
@@ -189,7 +189,7 @@ namespace WinMemoryCleaner
                             _table.Reconcile(snapshot.Processes); ProcessesView.Refresh();
                             if(old!=null&&!_table.Rows.Contains(old)) SelectedProcess=null;
                         }
-                        if(snapshot!=null)snapshot.Processes=null;
+                        if(snapshot!=null)snapshot.Processes.Clear();
                         foreach(string property in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","OverlayCpuText","OverlayGpuText","OverlayCpuTemperatureText","OverlayGpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail","GpuName","MemoryText","ProcessCount","ProcessCountText"}) RaisePropertyChanged(property);
                     }
                     finally { Interlocked.Exchange(ref _pending,0); }
@@ -235,6 +235,7 @@ namespace WinMemoryCleaner
         {
             if(_disposed)return;
             _disposed=true; Localizer.StaticPropertyChanged-=OnLanguageChanged;
+            if(_monitor!=null){var monitor=_monitor;_monitor=null;monitor.Dispose();}
             _pump.Dispose(); _table.Clear(); _last=null; _selected=null;
         }
     }
