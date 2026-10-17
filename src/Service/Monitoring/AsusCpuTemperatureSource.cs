@@ -1,6 +1,7 @@
 using Microsoft.Win32.SafeHandles;
 using System;
 using System.ComponentModel;
+using System.Globalization;
 using System.Runtime.InteropServices;
 
 namespace WinMemoryCleaner
@@ -40,7 +41,7 @@ namespace WinMemoryCleaner
             uint raw = BitConverter.ToUInt32(response, 0);
             int temperature = (int)(raw & 0xffffu);
             if ((raw & 0xffff0000u) != 0x00010000u || temperature < 1 || temperature > 150)
-                return MetricValue.Missing(MetricStatus.Unsupported, Source + ": sensor absent or invalid reading (0x" + raw.ToString("X8") + ")");
+                return MetricValue.Missing(MetricStatus.Unsupported, Source + ": sensor absent or invalid reading (0x" + raw.ToString("X8", CultureInfo.InvariantCulture) + ")");
             return MetricValue.Available(temperature, Source);
         }
 

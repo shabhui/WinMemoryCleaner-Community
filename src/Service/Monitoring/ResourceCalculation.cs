@@ -47,7 +47,7 @@ namespace WinMemoryCleaner
             var match=Instance.Match(instance);uint high,low;
             if(!match.Success||!int.TryParse(match.Groups[1].Value,out pid)||!uint.TryParse(match.Groups[2].Value,NumberStyles.HexNumber,CultureInfo.InvariantCulture,out high)||!uint.TryParse(match.Groups[3].Value,NumberStyles.HexNumber,CultureInfo.InvariantCulture,out low))return false;
             if(!_physical.Contains(((ulong)high<<32)|low))return false;
-            engine=high.ToString("X8")+low.ToString("X8")+"/"+match.Groups[4].Value+"/"+match.Groups[5].Value;return true;
+            engine=high.ToString("X8",CultureInfo.InvariantCulture)+low.ToString("X8",CultureInfo.InvariantCulture)+"/"+match.Groups[4].Value+"/"+match.Groups[5].Value;return true;
         }
         public void AddEngine(string instance,double value)
         {

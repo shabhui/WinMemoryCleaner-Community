@@ -38,7 +38,7 @@ namespace WinMemoryCleaner
                 result.CpuUsage=MetricValue.Missing(MetricStatus.Error,new Win32Exception(Marshal.GetLastWin32Error()).Message);
                 _idle=_kernel=_user=null;
             }
-            if(includeProcesses)result.Processes=ReadProcesses();
+            if(includeProcesses)foreach(var process in ReadProcesses())result.Processes.Add(process);
             else ClearProcesses();
             var gpu=_gpu.Sample(includeProcesses);
             result.GpuUsage=gpu.Usage; result.GpuName=gpu.Name;

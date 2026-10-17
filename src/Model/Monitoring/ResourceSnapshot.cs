@@ -18,16 +18,16 @@ namespace WinMemoryCleaner
     }
     public sealed class ResourceSnapshot
     {
+        private readonly List<ProcessSnapshot> _processes = new List<ProcessSnapshot>();
         public MetricValue CpuUsage { get; set; }
         public MetricValue GpuUsage { get; set; }
         public MetricValue CpuTemperature { get; set; }
         public MetricValue GpuTemperature { get; set; }
         public string GpuName { get; set; }
-        public IList<ProcessSnapshot> Processes { get; set; }
+        public IList<ProcessSnapshot> Processes { get { return _processes; } }
         public ResourceSnapshot()
         {
             CpuUsage=GpuUsage=CpuTemperature=GpuTemperature=MetricValue.Missing(MetricStatus.WarmingUp,"No sample yet");
-            Processes=new List<ProcessSnapshot>();
         }
     }
 }

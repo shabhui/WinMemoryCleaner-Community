@@ -26,6 +26,7 @@ namespace WinMemoryCleaner
         public ProcessRow(ProcessSnapshot snapshot) { Snapshot = snapshot; }
         public void Apply(ProcessSnapshot snapshot)
         {
+            if (snapshot == null) return;
             var old = Snapshot; Snapshot = snapshot;
             if (old.Name != snapshot.Name) RaisePropertyChanged("Name");
             if (old.WorkingSetBytes != snapshot.WorkingSetBytes) { RaisePropertyChanged("MemoryText"); RaisePropertyChanged("MemorySortKey"); }
@@ -81,7 +82,8 @@ namespace WinMemoryCleaner
         public ProcessRowComparer(string field, bool descending) { _field = field; _descending = descending; }
         public int Compare(object x, object y)
         {
-            var a = (ProcessRow)x; var b = (ProcessRow)y;
+            var a = x as ProcessRow; var b = y as ProcessRow;
+            if (a == null || b == null) return a == null ? (b == null ? 0 : 1) : -1;
             int result;
             if (_field == "Name") result = StringComparer.OrdinalIgnoreCase.Compare(a.Name, b.Name);
             else if (_field == "Id") result = a.Id.CompareTo(b.Id);

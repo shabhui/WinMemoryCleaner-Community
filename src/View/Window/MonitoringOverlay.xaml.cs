@@ -71,7 +71,8 @@ namespace WinMemoryCleaner
             if (_handle == IntPtr.Zero || _closed) return;
             int style = GetWindowLong(_handle, ExStyle) | NoActivate | ToolWindow;
             style = PassThrough ? style | Transparent : style & ~Transparent;
-            SetWindowLong(_handle, ExStyle, style);
+            int previousStyle = SetWindowLong(_handle, ExStyle, style);
+            if (previousStyle == 0 && Marshal.GetLastWin32Error() != 0) return; // Style apply failed; skip the topmost reassert.
             // SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED
             SetWindowPos(_handle, new IntPtr(-1), 0, 0, 0, 0, 0x33);
         }

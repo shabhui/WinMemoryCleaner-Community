@@ -11,7 +11,7 @@ using System.Windows.Threading;
 namespace WinMemoryCleaner
 {
     /// <summary>Cleaner shell with independent, demand-driven resource monitoring.</summary>
-    public partial class MainWindow : View
+    public partial class MainWindow : View, IDisposable
     {
         private const double ExpandedHeight = 700;
         private const double ExpandedWidth = 960;
@@ -208,9 +208,14 @@ namespace WinMemoryCleaner
             _viewModel.OnOptimizeCommandCompleted -= OnOptimizeCommandCompleted;
             Localizer.StaticPropertyChanged -= OnLocalizerChanged;
             Monitoring.PropertyChanged -= OnMonitoringChanged;
-            if (_overlay != null) _overlay.Close();
-            if (_settings != null) _settings.Dispose();
+            Dispose();
             Monitoring.Dispose();
+        }
+        /// <summary>Releases the lazily created settings surface and the overlay window.</summary>
+        public void Dispose()
+        {
+            if (_overlay != null) { _overlay.Close(); _overlay = null; }
+            if (_settings != null) { _settings.Dispose(); _settings = null; }
         }
         private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
