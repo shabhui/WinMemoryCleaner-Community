@@ -192,6 +192,7 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\shared\Sensors\*.cs"><Link>Service\Monitoring\Sensors\Shared\%(Filename)%(Extension)</Link></Compile>
     <Compile Include="Core\Monitoring\*.cs" />
     <Compile Include="Model\Monitoring\*.cs" />
     <Compile Include="Service\Monitoring\*.cs" />
