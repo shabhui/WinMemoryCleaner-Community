@@ -196,6 +196,7 @@
     <Compile Include="Core\Monitoring\*.cs" />
     <Compile Include="Model\Monitoring\*.cs" />
     <Compile Include="Service\Monitoring\*.cs" />
+    <Compile Include="Service\Monitoring\Sensors\*.cs" />
     <Compile Include="Interfaces\IResourceMonitor.cs" />
     <Compile Include="Interop\MonitoringNativeMethods.cs" />
     <Compile Include="ViewModel\MonitoringViewModel.cs" />

@@ -84,12 +84,12 @@ $body=$body.Replace('$PSScriptRoot',"$repo\tools")
 - `BoundedLineReader.ReadLine() : string`：UTF8换行前超64KiB抛InvalidDataException，EOF返回null。
 - `SensorFreshness.Accept(SensorMessage message, DateTime utcNow, long monotonicTicks, int refreshSeconds) : bool`；`IsFresh(...) : bool`；`Reset()`。
 
-- [ ] **Step 1: Write failing selection tests**：`PackageWinsOverCoreAndDistance`断言Package=54而非Core80/Distance99；`AmdTdieAndCombinedAreNotOffset`断言优先Tdie61、仅合并时73原值；`CoreOnlyAndCcdUseMaximum`断言Core/CCD最高；`HotspotOnlyDeviceDoesNotWin`断言GPU Core46胜过另一卡Hot Spot110；`InvalidReadingExcluded`覆盖null/0/NaN/Infinity/0.99/150.01，1及150有效；`OrdinalTieStableAndCultureIndependent`覆盖土耳其/德语、混合CPU/GPU及名称尾缀拒绝。
-- [ ] **Step 2: Run Test build**：预期编译失败，缺失共享类型/方法；记录红灯输出。
-- [ ] **Step 3: Implement shared selection**：精确全名/完整数字模式，设备内优先级再最高，最后Ordinal标识tie；返回带Measurement的副本。
-- [ ] **Step 4: Write protocol/freshness failing tests**：roundtrip Unicode/invariant；unknown version/session/field type/depth17/count65/64KiB+拒绝；坏读数只丢项；重复/旧序号、UTC超前5.001秒、过期10/15秒均不续命；stderr测试留给Task3。
-- [ ] **Step 5: Implement protocol/freshness**：DeserializeObject只处理已知基础类型，显式验证结构；读取器在累积前检查字节，禁止任意类型加载；纯逻辑时钟由参数传入。
-- [ ] **Step 6: Run safe tests**：既有413个及新增测试全绿，`git diff --check`；提交 `feat: add bounded temperature selection and sensor protocol`。
+- [x] **Step 1: Write failing selection tests**：`PackageWinsOverCoreAndDistance`断言Package=54而非Core80/Distance99；`AmdTdieAndCombinedAreNotOffset`断言优先Tdie61、仅合并时73原值；`CoreOnlyAndCcdUseMaximum`断言Core/CCD最高；`HotspotOnlyDeviceDoesNotWin`断言GPU Core46胜过另一卡Hot Spot110；`InvalidReadingExcluded`覆盖null/0/NaN/Infinity/0.99/150.01，1及150有效；`OrdinalTieStableAndCultureIndependent`覆盖土耳其/德语、混合CPU/GPU及名称尾缀拒绝。
+- [x] **Step 2: Run Test build**：预期编译失败，缺失共享类型/方法；记录红灯输出。
+- [x] **Step 3: Implement shared selection**：精确全名/完整数字模式，设备内优先级再最高，最后Ordinal标识tie；返回带Measurement的副本。
+- [x] **Step 4: Write protocol/freshness failing tests**：roundtrip Unicode/invariant；unknown version/session/field type/depth17/count65/64KiB+拒绝；坏读数只丢项；重复/旧序号、UTC超前5.001秒、过期10/15秒均不续命；stderr测试留给Task3。
+- [x] **Step 5: Implement protocol/freshness**：DeserializeObject只处理已知基础类型，显式验证结构；读取器在累积前检查字节，禁止任意类型加载；纯逻辑时钟由参数传入。
+- [x] **Step 6: Run safe tests**：既有413个及新增测试全绿，`git diff --check`；提交 `feat: add bounded temperature selection and sensor protocol`。
 
 ### Task 2: Trusted payload, dependencies and explicit driver installation
 
@@ -101,12 +101,12 @@ $body=$body.Replace('$PSScriptRoot',"$repo\tools")
 - `SensorDriverInstaller.Begin(bool explicitlyConfirmed) : bool`、`IsInstalling : bool`、`Status : string`；仅授权开始，一个安装器、完成后重新Inspect而非看退出0。
 - 安装测试通过注入 `Func<SensorDriverState>`、`Func<SensorPayloadLease>`、固定安装启动/等待替身，不能连接真实安装器。
 
-- [ ] **Step 1: Lock/download dependencies**：下载固定net472包图，记录每nupkg SHA512/base64、SHA256与选定runtime路径；下载固定官方安装器，实际Authenticode有效且Git blob匹配才纳入；提取许可证，不运行安装器。
-- [ ] **Step 2: Write failing payload tests**：缺资源/长度或SHA错误拒绝；绝对/`..`/重解析/额外文件拒绝；并发Prepare只发布完整目录；损坏可重建；租约持有时重命名/写入执行依赖失败；释放后可清理本应用缓存。
-- [ ] **Step 3: Implement payload**：CI JSON清单自身SHA作为版本目录；临时目录完整验证后Directory.Move；拒绝重解析链/异常目录，启动前锁定并再核验所有文件。
-- [ ] **Step 4: Write failing install/trust tests**：未授权/取消不启动；签名失败/设备不可用/新版已装不覆盖；重复请求仅一次；退出0但未就绪/3010需重启/失败均显示原因；安装后重新检查并通知控制器重启。
-- [ ] **Step 5: Implement trust/installer**：WinVerifyTrust +官方签名身份/模式验证，已有驱动只读；安装文件固定并防替换；交互启动无静默/自动重启/安全降级参数，等待后台执行。
-- [ ] **Step 6: Run safe tests and input hash checks**：不得出现新PawnIO服务/设置；提交 `feat: prepare verified sensor payload and explicit driver installation`。
+- [x] **Step 1: Lock/download dependencies**：下载固定net472包图，记录每nupkg SHA512/base64、SHA256与选定runtime路径；下载固定官方安装器，实际Authenticode有效且Git blob匹配才纳入；提取许可证，不运行安装器。
+- [x] **Step 2: Write failing payload tests**：缺资源/长度或SHA错误拒绝；绝对/`..`/重解析/额外文件拒绝；并发Prepare只发布完整目录；损坏可重建；租约持有时重命名/写入执行依赖失败；释放后可清理本应用缓存。
+- [x] **Step 3: Implement payload**：CI JSON清单自身SHA作为版本目录；临时目录完整验证后Directory.Move；拒绝重解析链/异常目录，启动前锁定并再核验所有文件。
+- [x] **Step 4: Write failing install/trust tests**：未授权/取消不启动；签名失败/设备不可用/新版已装不覆盖；重复请求仅一次；退出0但未就绪/3010需重启/失败均显示原因；安装后重新检查并通知控制器重启。
+- [x] **Step 5: Implement trust/installer**：WinVerifyTrust +官方签名身份/模式验证，已有驱动只读；安装文件固定并防替换；交互启动无静默/自动重启/安全降级参数，等待后台执行。
+- [x] **Step 6: Run safe tests and input hash checks**：495/495 安全测试通过，16个固定包/12个DLL恢复通过；旧EXE、PID23072、HKLM32/64、原任务和现有共享PawnIO均未改变；提交 `feat: prepare verified sensor payload and explicit driver installation`。
 
 ### Task 3: Read-only hardware backend and managed process
 
