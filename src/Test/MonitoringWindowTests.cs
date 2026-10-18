@@ -15,6 +15,7 @@ namespace WinMemoryCleaner.Test
 {
     [TestFixture]
     [RequiresSTA]
+    [Category("Desktop")]
     public sealed class MonitoringWindowTests : IDisposable
     {
         private MainWindow _window;

@@ -32,6 +32,9 @@ jobs:
   release-build:
     name: Release artifacts (Visual Studio MSBuild)
     runs-on: windows-latest
+    # The safe suite normally finishes in well under two minutes; without this
+    # bound a hung runner would hold the concurrency slot for the 6h default.
+    timeout-minutes: 30
     permissions:
       contents: write # only used by the optional release publish step
 
