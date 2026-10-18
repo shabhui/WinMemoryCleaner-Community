@@ -118,7 +118,13 @@ namespace WinMemoryCleaner.Test
         {
             if (_disposed) return;
             _disposed = true;
-            if (disposing) Cleanup();
+            if (disposing)
+            {
+                if (_window != null) _window.Dispose();
+                if (_locator != null) _locator.Dispose();
+                if (_notifications != null) _notifications.Dispose();
+                _window = null; _locator = null; _notifications = null;
+            }
         }
 
         [Test]
