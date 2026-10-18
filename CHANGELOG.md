@@ -1,6 +1,12 @@
-### Unreleased
+### 3.0.8.3-community.3
 
-**After 3.0.8.2-community.2 (unreleased, unofficial community continuation)**
+**2026-10-18 (unofficial community continuation, not an upstream release)**
+
+- Compact monitoring overlay: a horizontal strip by default (about 316×26 DIP with every item enabled) with a switchable vertical layout (about 118×78 DIP), per-item display toggles, a saved custom corner/position, mouse click-through on by default, no focus stealing, and no large frame, title bar or shadow; hiding the main window keeps an enabled strip visible
+- Real CPU temperature from the ASUS ATK ACPI sensor that is already installed (DSTS GET 0x53545344, CPU sensor id 0x00120094, 1–150 °C sanity window, 30 s failure backoff) and GPU temperature from NVIDIA NVAPI; unavailable sensors show "—" instead of invented values, the LibreHardwareMonitor WMI namespace is queried only when its process is running, and no new drivers, fan, power or mode commands are involved
+- Monitor-only mode hides the large shell while cleanup, tray, settings and themes stay available; process insights show one row per PID with CPU deltas and working-set/private/dedicated-GPU memory columns in Chinese and English, plus safe per-process actions (end tree, suspend, resume, priority) with a confirmation dialog
+- Analyzer-clean release build: the whole source and test project now satisfy the full `AllRules.ruleset` under the pinned `LangVersion=4` (dispose patterns, culture-safe parsing, P/Invoke marshaling, collection property shapes); 413 safe tests run in CI, real-shell desktop fixtures are excluded from the headless safe suite, and both community workflows carry a 30-minute job timeout with per-test labels and a 60-second single-test timeout
+- Community continuation of the monitoring work is documented in `docs/compact-monitoring-report.zh-CN.md`, `docs/monitoring-guide.zh-CN.md` and `docs/monitoring-acceptance-report.zh-CN.md`
 
 ### 3.0.8.2-community.2
 
