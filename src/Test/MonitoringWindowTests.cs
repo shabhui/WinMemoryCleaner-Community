@@ -15,13 +15,14 @@ namespace WinMemoryCleaner.Test
 {
     [TestFixture]
     [RequiresSTA]
-    public sealed class MonitoringWindowTests
+    public sealed class MonitoringWindowTests : IDisposable
     {
         private MainWindow _window;
         private ViewModelLocator _locator;
         private ResourceDictionary _oldResources;
         private NotificationService _notifications;
         private IDictionary _oldRegistrations, _oldSingletons;
+        private bool _disposed;
 
         private MainWindow CreateWindow(bool overlayEnabled = false)
         {
@@ -106,6 +107,18 @@ namespace WinMemoryCleaner.Test
             _window = null; _locator = null; _notifications = null; _oldResources = null;
             Settings.Reset(true);
             Drain();
+        }
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
+
+        private void Dispose(bool disposing)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            if (disposing) Cleanup();
         }
 
         [Test]
