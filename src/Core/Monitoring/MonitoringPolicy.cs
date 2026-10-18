@@ -4,7 +4,7 @@ using System.Globalization;
 #pragma warning disable 1591
 namespace WinMemoryCleaner
 {
-    public struct MonitoringDemand
+    public struct MonitoringDemand : IEquatable<MonitoringDemand>
     {
         public bool CpuGpu { get; private set; }
         public bool Processes { get; private set; }

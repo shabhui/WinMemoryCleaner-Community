@@ -27,6 +27,7 @@ namespace WinMemoryCleaner
         private static bool _isRunning;
         private static Mutex _mutex;
         private static NotifyIcon _notifyIcon;
+        private static MainWindow _mainWindow;
         private static readonly List<string> _notifications = new List<string>();
         private static readonly object _showHidelock = new object();
         private static System.Threading.Timer _shutdownWatchdog;
@@ -131,6 +132,19 @@ namespace WinMemoryCleaner
             if (disposing)
             {
                 Logger.Dispose();
+                if (_mainWindow != null)
+                {
+                    try
+                    {
+                        _mainWindow.Dispose();
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+
+                    _mainWindow = null;
+                }
 
                 try
                 {
@@ -500,15 +514,15 @@ namespace WinMemoryCleaner
                         // DI/IOC
                         DependencyInjection.Container.Register(_notifyIcon);
 
-                        var mainWindow = new MainWindow();
+                        _mainWindow = new MainWindow();
 
                         if (!Settings.StartMinimized)
                         {
-                            mainWindow.Show();
-                            mainWindow.Activate();
-                            mainWindow.Focus();
-                            mainWindow.Topmost = true;
-                            mainWindow.Topmost = Settings.AlwaysOnTop;
+                            _mainWindow.Show();
+                            _mainWindow.Activate();
+                            _mainWindow.Focus();
+                            _mainWindow.Topmost = true;
+                            _mainWindow.Topmost = Settings.AlwaysOnTop;
                         }
 
                         // Subscribe to power events
