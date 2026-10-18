@@ -100,7 +100,11 @@ if ($Tests) {
     New-Item -ItemType Directory -Path $results -Force | Out-Null
     $xml = Join-Path $results 'TestResults.xml'
 
-    & $runner $testExe /framework:net-4.0 /exclude:Manual,Desktop /noshadow /nologo "/work:$results" "/xml:$xml"
+    # /labels prints every test name as it starts, so a CI log always shows which test
+    # is running when something stalls. /timeout bounds every single test: a hung test
+    # is aborted after 60 seconds and reported as a failure instead of holding the
+    # headless runner until the job timeout.
+    & $runner $testExe /framework:net-4.0 /exclude:Manual,Desktop /labels /timeout:60000 /noshadow /nologo "/work:$results" "/xml:$xml"
     if ($LASTEXITCODE -ne 0) { throw "Safe test suite failed (results: $xml)" }
 
     Write-Host "TESTS OK (excluded categories: Manual, Desktop): $xml"

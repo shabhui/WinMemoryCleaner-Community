@@ -8,6 +8,7 @@ using NUnit.Framework;
 namespace WinMemoryCleaner.Test
 {
     [TestFixture]
+    [NUnit.Framework.Category("Desktop")]
     public sealed class LegacyMonitoringTests
     {
         private static MainViewModel Create()
