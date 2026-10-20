@@ -23,7 +23,10 @@ namespace WinMemoryCleaner
         private readonly MainViewModel _cleaner;
         private readonly Dispatcher _dispatcher;
         private readonly MonitoringPump _pump;
-        private IResourceMonitor _monitor;
+        private readonly MonitoringSession _session;
+        private readonly Func<Action,SensorDriverInstaller> _createInstaller;
+        private SensorDriverInstaller _installer;
+        private DispatcherTimer _installTimer;
         private readonly ProcessTable _table = new ProcessTable();
         private MonitoringOptions _options;
         private ResourceSnapshot _last;
@@ -37,8 +40,16 @@ namespace WinMemoryCleaner
         private ProcessRow _selected;
 
         public MonitoringViewModel(MainViewModel cleaner, Dispatcher dispatcher)
+            : this(cleaner,dispatcher,delegate { return new ResourceMonitor(); }) { }
+        internal MonitoringViewModel(MainViewModel cleaner,Dispatcher dispatcher,Func<IResourceMonitor> createMonitor)
+            : this(cleaner,dispatcher,createMonitor,delegate(Action completed) { return new SensorDriverInstaller(completed); }) { }
+        internal MonitoringViewModel(MainViewModel cleaner,Dispatcher dispatcher,Func<IResourceMonitor> createMonitor,Func<Action,SensorDriverInstaller> createInstaller)
         {
+            if(cleaner==null)throw new ArgumentNullException("cleaner");
+            if(dispatcher==null)throw new ArgumentNullException("dispatcher");
+            if(createInstaller==null)throw new ArgumentNullException("createInstaller");
             _cleaner=cleaner; _dispatcher=dispatcher; _options=Settings.Monitoring;
+            _createInstaller=createInstaller;_session=new MonitoringSession(createMonitor);
             _options.Normalize(); Labels=new MonitorText();
             ProcessesView=new ListCollectionView(_table.Rows);
             ProcessesView.Filter=delegate(object row) { var item=(ProcessRow)row; return MonitoringPolicy.MatchesProcess(item.Name,item.Id,_query); };
@@ -98,6 +109,51 @@ namespace WinMemoryCleaner
         public string GpuDetail { get { return Detail(_last==null?null:_last.GpuUsage,false); } }
         public string CpuTemperatureDetail { get { return Detail(_last==null?null:_last.CpuTemperature,true); } }
         public string GpuTemperatureDetail { get { return Detail(_last==null?null:_last.GpuTemperature,false); } }
+        public bool IsInstallingDriver { get { return _installer!=null&&_installer.IsInstalling; } }
+        public bool CanInstallDriver { get { return !_disposed&&!IsInstallingDriver; } }
+        public string TemperatureStatusText
+        {
+            get
+            {
+                string backend=_last==null?"Disabled":_last.SensorBackendStatus;
+                string driver=_last==null?"NotChecked":_last.SensorDriverStatus;
+                string text=string.Format(Localizer.Culture,Labels["SensorStatus"],SensorState(backend),SensorState(driver));
+                if(_installer!=null)text+=" · "+SensorState(_installer.Status);
+                return text;
+            }
+        }
+        public string TemperatureStatusDetail
+        { get { return CpuTemperatureDetail+Environment.NewLine+GpuTemperatureDetail+(_last==null||string.IsNullOrEmpty(_last.SensorDiagnostic)?string.Empty:Environment.NewLine+_last.SensorDiagnostic); } }
+        private string SensorState(string state)
+        {
+            string actual=state??"NotChecked";
+            string key="Sensor"+actual;
+            string text=Labels[key];
+            if(text!=key)return text;
+            return actual.StartsWith("InstallFailed",StringComparison.Ordinal)
+                ?Labels["SensorInstallFailed"]+actual.Substring("InstallFailed".Length):actual;
+        }
+        internal bool BeginDriverInstallation(bool explicitlyConfirmed)
+        {
+            if(_disposed||!explicitlyConfirmed||IsInstallingDriver)return false;
+            if(_installer==null)_installer=_createInstaller(OnDriverInstallationFinished);
+            bool began=_installer.Begin(true);
+            if(began)
+            {
+                if(_installTimer==null)
+                {
+                    _installTimer=new DispatcherTimer(DispatcherPriority.Background,_dispatcher) { Interval=TimeSpan.FromMilliseconds(250) };
+                    _installTimer.Tick+=OnInstallationProgress;
+                }
+                _installTimer.Start();
+            }
+            RaiseSensorStatus();return began;
+        }
+        private void OnDriverInstallationFinished() { if(!_disposed)_session.RequestDriverReset(); }
+        private void OnInstallationProgress(object sender,EventArgs args)
+        { if(_disposed||!IsInstallingDriver)_installTimer.Stop();if(!_disposed)RaiseSensorStatus(); }
+        private void RaiseSensorStatus()
+        { foreach(string name in new[]{"TemperatureStatusText","TemperatureStatusDetail","IsInstallingDriver","CanInstallDriver"})RaisePropertyChanged(name); }
         public string GpuName { get { return _last==null?Labels["WarmingUp"]:_last.GpuName; } }
         public string MemoryText
         {
@@ -135,6 +191,14 @@ namespace WinMemoryCleaner
         private void UpdateDemand()
         {
             var demand=MonitoringPolicy.GetDemand(_mainVisible,_processPage,OverlayEnabled,_mainVisible||ShowCpuTemperature||ShowGpuTemperature);
+            _session.SetDemand(demand);
+            if(!demand.Temperatures&&_last!=null)
+            {
+                _last.CpuTemperature=_last.GpuTemperature=MetricValue.Missing(MetricStatus.Disabled,"Temperature sampling is not requested");
+                _last.SensorBackendStatus="Disabled";
+                foreach(string name in new[]{"CpuTemperatureText","GpuTemperatureText","OverlayCpuTemperatureText","OverlayGpuTemperatureText","CpuTemperatureDetail","GpuTemperatureDetail"})RaisePropertyChanged(name);
+                RaiseSensorStatus();
+            }
             _cleaner.SetMemoryRefreshInterval(demand.CpuGpu?RefreshSeconds:5);
             _pump.SetDemand(demand,RefreshSeconds);
         }
@@ -167,11 +231,11 @@ namespace WinMemoryCleaner
             ResourceSnapshot snapshot=null; string failure=null;
             try
             {
-                if(_monitor==null) _monitor=new ResourceMonitor();
+                if(_disposed)return;
                 Interlocked.Increment(ref _sampleCount);
                 if(demand.Processes) Interlocked.Increment(ref _processSampleCount);
                 if(demand.Temperatures) Interlocked.Increment(ref _temperatureSampleCount);
-                snapshot=_monitor.Sample(demand.Processes,demand.Temperatures);
+                snapshot=_session.Sample(demand,RefreshSeconds);
             }
             catch(Exception ex) { failure=Labels["Error"]+": "+ex.Message; }
             if(_disposed||!_pump.IsCurrent(generation)||Interlocked.CompareExchange(ref _pending,1,0)!=0)return;
@@ -191,18 +255,14 @@ namespace WinMemoryCleaner
                         }
                         if(snapshot!=null)snapshot.Processes.Clear();
                         foreach(string property in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","OverlayCpuText","OverlayGpuText","OverlayCpuTemperatureText","OverlayGpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail","GpuName","MemoryText","ProcessCount","ProcessCountText"}) RaisePropertyChanged(property);
+                        RaiseSensorStatus();
                     }
                     finally { Interlocked.Exchange(ref _pending,0); }
                 }),DispatcherPriority.Background);
             }
             catch(InvalidOperationException) { Interlocked.Exchange(ref _pending,0); }
         }
-        private void Suspend()
-        {
-            if(_monitor==null)return;
-            if(_disposed) { _monitor.Dispose(); _monitor=null; }
-            else _monitor.Suspend();
-        }
+        private void Suspend() { _session.Suspend(); }
         private static string OverlayReading(MetricValue metric,bool temperature)
         {
             return metric!=null&&metric.Status==MetricStatus.Available&&metric.Value.HasValue
@@ -230,13 +290,14 @@ namespace WinMemoryCleaner
             Labels.Refresh(); RaisePropertyChanged("Corners"); RaisePropertyChanged("OverlayLayouts");
             RaisePropertyChanged("OverlayCorner"); RaisePropertyChanged("OverlayLayout"); RaisePropertyChanged("ProcessCountText");
             foreach(string name in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail"})RaisePropertyChanged(name);
+            RaiseSensorStatus();
         }
         public void Dispose()
         {
             if(_disposed)return;
             _disposed=true; Localizer.StaticPropertyChanged-=OnLanguageChanged;
-            if(_monitor!=null){var monitor=_monitor;_monitor=null;monitor.Dispose();}
-            _pump.Dispose(); _table.Clear(); _last=null; _selected=null;
+            if(_installTimer!=null) { _installTimer.Stop();_installTimer.Tick-=OnInstallationProgress; }
+            _session.Dispose();_pump.Dispose(); _table.Clear(); _last=null; _selected=null;
         }
     }
 }

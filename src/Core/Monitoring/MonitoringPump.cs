@@ -45,7 +45,7 @@ namespace WinMemoryCleaner
             }
             try
             {
-                if (demand.CpuGpu && !_disposed) _sample(demand, generation);
+                if (demand.CpuGpu && IsCurrent(generation)) _sample(demand, generation);
             }
             catch (Exception)
             {
@@ -53,12 +53,17 @@ namespace WinMemoryCleaner
             }
             finally
             {
+                bool suspend;int settledGeneration;
+                lock (_sync) { suspend = !_demand.CpuGpu || _disposed; settledGeneration = _generation; }
+                // Keep _working true, but never hold the UI state lock during provider shutdown.
+                if (suspend) { try { _suspend(); } catch (Exception) { } }
+                bool retry;
                 lock (_sync)
                 {
-                    try { if (!_demand.CpuGpu || _disposed) _suspend(); }
-                    catch (Exception) { }
                     _working = false;
+                    retry = _generation != settledGeneration || (!_disposed && _demand.CpuGpu && _generation != generation);
                 }
+                if (retry) ThreadPool.QueueUserWorkItem(Tick);
             }
         }
         public void Dispose()

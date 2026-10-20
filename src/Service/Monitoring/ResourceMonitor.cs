@@ -7,7 +7,7 @@ using System.Runtime.InteropServices;
 namespace WinMemoryCleaner
 {
     // Serialized by MonitoringPump. No timer, dispatcher or Process objects are retained here.
-    public sealed class ResourceMonitor : IResourceMonitor
+    public sealed class ResourceMonitor : IResourceMonitor,ITemperatureConfiguration
     {
         private sealed class ProcessTime
         {
@@ -20,7 +20,16 @@ namespace WinMemoryCleaner
         private int _bufferBytes;
         private bool _disposed;
         private readonly GpuSampler _gpu=new GpuSampler();
-        private readonly TemperatureSampler _temperature=new TemperatureSampler();
+        private readonly TemperatureSampler _temperature;
+        private volatile bool _temperatureDemand=true;
+
+        public ResourceMonitor() : this(new TemperatureSampler()) { }
+        internal ResourceMonitor(TemperatureSampler temperature)
+        { if(temperature==null)throw new ArgumentNullException("temperature");_temperature=temperature; }
+        void ITemperatureConfiguration.ConfigureTemperatures(int refreshSeconds) { _temperature.Configure(refreshSeconds); }
+        void ITemperatureConfiguration.SetTemperatureDemand(bool requested)
+        { _temperatureDemand=requested;_temperature.SetDemand(requested); }
+        void ITemperatureConfiguration.ResetTemperatureDriver() { _temperature.ResetDriverState(); }
 
         public ResourceSnapshot Sample(bool includeProcesses,bool includeTemperatures)
         {
@@ -49,7 +58,7 @@ namespace WinMemoryCleaner
                 else process.GpuStatus=gpu.Usage.Status==MetricStatus.Available?MetricStatus.Unsupported:gpu.Usage.Status;
                 if(gpu.ProcessMemory.TryGetValue(process.Id,out memory))process.GpuMemoryBytes=memory;
             }
-            if(includeTemperatures)
+            if(includeTemperatures&&_temperatureDemand)
             {
                 _temperature.Sample(out resultCpuTemperature,out resultGpuTemperature);
                 result.CpuTemperature=resultCpuTemperature;result.GpuTemperature=resultGpuTemperature;
@@ -60,6 +69,9 @@ namespace WinMemoryCleaner
                 result.GpuTemperature=result.CpuTemperature;
                 _temperature.Suspend();
             }
+            result.SensorBackendStatus=_temperature.BackendStatus;
+            result.SensorDriverStatus=_temperature.DriverStatus;
+            result.SensorDiagnostic=_temperature.Diagnostic;
             return result;
         }
         private MetricValue resultCpuTemperature,resultGpuTemperature;

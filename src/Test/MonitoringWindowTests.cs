@@ -59,7 +59,7 @@ namespace WinMemoryCleaner.Test
             resources["EnumToBooleanConverter"] = new EnumToBooleanConverter();
             resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/WinMemoryCleaner.Community;component/Resources/MonitoringStyles.xaml", UriKind.Relative) });
             application.Resources = resources;
-            _window = new MainWindow();
+            _window = new MainWindow(delegate { return new ResourceMonitor(new TemperatureSampler(null)); });
             return _window;
         }
 
@@ -384,6 +384,44 @@ namespace WinMemoryCleaner.Test
             StringAssert.Contains("PID " + Process.GetCurrentProcess().Id, prompt);
             StringAssert.Contains("未保存的数据可能丢失", prompt);
             StringAssert.Contains("未确认", (string)Monitoring.GetType().GetProperty("ActionStatus").GetValue(Monitoring, null));
+        }
+
+        [Test]
+        public void TemperatureSettings_BindStatusAndCancelOfficialDriverConfirmation()
+        {
+            var window=CreateWindow();window.Show();Select(2);Drain();
+            window.Width=window.MinWidth;window.Height=window.MinHeight;window.UpdateLayout();
+            var status=window.FindName("TemperatureStatus") as TextBlock;
+            var button=window.FindName("InstallTemperatureDriver") as Button;
+            Assert.IsNotNull(status);Assert.IsNotNull(button);
+            Assert.AreEqual(BindingStatus.Active,status.GetBindingExpression(TextBlock.TextProperty).Status);
+            Assert.AreEqual(BindingStatus.Active,status.GetBindingExpression(FrameworkElement.ToolTipProperty).Status);
+            Assert.AreEqual(BindingStatus.Active,button.GetBindingExpression(UIElement.IsEnabledProperty).Status);
+            foreach(string culture in new[]{"zh-Hans","en","de"})
+            {
+                Localizer.Language=new Language(System.Globalization.CultureInfo.GetCultureInfo(culture));Drain();
+                Assert.AreEqual(window.Monitoring.Labels["InstallSensorDriver"],button.Content);
+                Assert.AreEqual(window.Monitoring.TemperatureStatusText,status.Text);
+                Assert.IsTrue(button.IsEnabled);Assert.Greater(status.ActualWidth,80);
+                string prompt=null;var cancel=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(20) };
+                cancel.Tick+=delegate
+                {
+                    var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(w=>w is MessageDialog);
+                    if(dialog==null)return;
+                    cancel.Stop();Assert.AreSame(window,dialog.Owner);
+                    prompt=(string)dialog.DataContext.GetType().GetProperty("Message").GetValue(dialog.DataContext,null);
+                    dialog.DialogResult=false;
+                };
+                cancel.Start();
+                try { button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+                finally { cancel.Stop(); }
+                Assert.AreEqual(window.Monitoring.Labels["ConfirmSensorDriver"],prompt);
+                StringAssert.Contains("PawnIO 2.1.0",prompt);StringAssert.Contains("Secure Boot",prompt);
+                Assert.IsNull(typeof(MonitoringViewModel).GetField("_installer",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(window.Monitoring));
+                Assert.IsFalse(window.Monitoring.IsInstallingDriver);
+            }
+            window.Close();Drain();Assert.IsFalse(window.Monitoring.CanInstallDriver);
+            Assert.IsFalse(window.Monitoring.BeginDriverInstallation(true));
         }
     }
 }

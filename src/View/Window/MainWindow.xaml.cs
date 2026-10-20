@@ -32,11 +32,12 @@ namespace WinMemoryCleaner
         public MonitoringViewModel Monitoring { get; private set; }
 
         /// <summary>Creates the shell without starting detailed sampling until it is visible.</summary>
-        public MainWindow()
+        public MainWindow() : this(delegate { return new ResourceMonitor(); }) { }
+        internal MainWindow(Func<IResourceMonitor> createMonitor)
         {
             var locator = (ViewModelLocator)FindResource("ViewModelLocator");
             _viewModel = locator.MainViewModel;
-            Monitoring = new MonitoringViewModel(_viewModel, Dispatcher);
+            Monitoring = new MonitoringViewModel(_viewModel, Dispatcher, createMonitor);
             InitializeComponent();
             Loaded += OnMainWindowLoaded;
             Closed += OnMainWindowClosed;
@@ -86,6 +87,12 @@ namespace WinMemoryCleaner
             if (button != null && int.TryParse(Convert.ToString(button.Tag, System.Globalization.CultureInfo.InvariantCulture), out page)) SelectPage(page);
         }
         private void OnRefreshClick(object sender, RoutedEventArgs e) { Monitoring.RefreshNow(); }
+        private void OnInstallTemperatureDriver(object sender,RoutedEventArgs e)
+        {
+            if(_closed||!Monitoring.CanInstallDriver)return;
+            var dialog=new MessageDialog(this,Monitoring.Labels["ConfirmSensorDriver"],Enums.Dialog.Button.No,Enums.Dialog.Button.Yes) { Title=Monitoring.Labels["ConfirmSensorDriverTitle"] };
+            Monitoring.BeginDriverInstallation(dialog.ShowDialog()==true);
+        }
         private void OnProcessSorting(object sender, DataGridSortingEventArgs e)
         {
             e.Handled = true;
@@ -226,6 +233,7 @@ namespace WinMemoryCleaner
             if (!disposing) return;
             if (_overlay != null) { _overlay.Close(); _overlay = null; }
             if (_settings != null) { _settings.Dispose(); _settings = null; }
+            if(Monitoring!=null)Monitoring.Dispose();
         }
         private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
         {

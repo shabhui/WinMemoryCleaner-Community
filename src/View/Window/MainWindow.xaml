@@ -107,6 +107,10 @@
                         </WrapPanel>
                         <TextBlock Text="{Binding Labels[Items]}" Style="{StaticResource MonitorLabel}"/>
                         <WrapPanel><CheckBox Content="{Binding Labels[Cpu]}" IsChecked="{Binding ShowCpu}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[Gpu]}" IsChecked="{Binding ShowGpu}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[Memory]}" IsChecked="{Binding ShowMemory}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[CpuTemperature]}" IsChecked="{Binding ShowCpuTemperature}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[GpuTemperature]}" IsChecked="{Binding ShowGpuTemperature}" Margin="0,0,18,10"/></WrapPanel>
+                        <DockPanel Margin="0,2,0,8" LastChildFill="True">
+                            <Button x:Name="InstallTemperatureDriver" DockPanel.Dock="Right" Content="{Binding Labels[InstallSensorDriver]}" Click="OnInstallTemperatureDriver" IsEnabled="{Binding CanInstallDriver}" Style="{StaticResource MonitorButton}" Margin="12,0,0,0"/>
+                            <TextBlock x:Name="TemperatureStatus" Text="{Binding TemperatureStatusText}" ToolTip="{Binding TemperatureStatusDetail}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        </DockPanel>
                         <TextBlock Text="{Binding Labels[OverlayNote]}" Style="{StaticResource MonitorNote}"/>
                         <Button x:Name="ShowMonitorOnly" Content="{Binding Labels[OnlyMonitor]}" Click="OnMonitorOnlyClick" Style="{StaticResource MonitorButton}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
                         <TextBlock Text="{Binding Labels[MonitorOnlyNote]}" Style="{StaticResource MonitorNote}"/>

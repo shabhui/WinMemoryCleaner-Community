@@ -167,6 +167,17 @@ namespace WinMemoryCleaner.Test
             }
         }
         [Test]
+        public void DriverResetAfterSuspendNeverRestoresCancelledDemand()
+        {
+            using(var controller=Controller("normal",new Clock()))
+            {
+                Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));int pid=controller.ProcessId;
+                controller.Suspend();controller.ResetDriverState();Assert.AreEqual("Disabled",controller.BackendStatus);
+                Assert.IsTrue(Wait(delegate { return Gone(pid)&&controller.ProcessId==0; }));
+                Thread.Sleep(150);Assert.AreEqual(0,controller.ProcessId);Assert.AreEqual("Disabled",controller.BackendStatus);
+            }
+        }
+        [Test]
         public void DisposeOfUnresponsiveBackendIsAsyncAndKillsOwnedIdentity()
         {
             var controller=Controller("one-frame",new Clock());int pid=0;

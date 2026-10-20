@@ -14,7 +14,7 @@ namespace WinMemoryCleaner
     /// process creation, pipe reading and cleanup all run on background threads, so configuration and
     /// snapshot reads never block the caller and never touch hardware directly.
     /// </summary>
-    internal sealed class SensorBackendController : IDisposable
+    internal sealed class SensorBackendController : ISensorBackend
     {
         private const int StartBudgetSeconds = 10;
         private const int RetrySeconds = 30;
@@ -67,6 +67,15 @@ namespace WinMemoryCleaner
             _clock = clock;
             _inspect = inspect;
         }
+
+        int ISensorBackend.ProcessId { get { return ProcessId; } }
+        string ISensorBackend.BackendStatus { get { return BackendStatus; } }
+        string ISensorBackend.DriverStatus { get { return DriverStatus; } }
+        string ISensorBackend.Diagnostic { get { return Diagnostic; } }
+        void ISensorBackend.Configure(int seconds) { Configure(seconds); }
+        void ISensorBackend.GetSnapshot(out MetricValue cpu,out MetricValue gpu) { GetSnapshot(out cpu,out gpu); }
+        void ISensorBackend.Suspend() { Suspend(); }
+        void ISensorBackend.ResetDriverState() { ResetDriverState(); }
 
         /// <summary>PID of the backend this controller owns, or 0 while nothing is running.</summary>
         internal int ProcessId { get { lock (_gate) { return _processId; } } }
@@ -129,13 +138,13 @@ namespace WinMemoryCleaner
                 if (_disposed) return;
                 _retryAt = 0;
                 _driver = "NotChecked";
-                if (_session != null)
+                if (_session != null) _session.Abandoned = true;
+                if (_demand)
                 {
-                    _demand = true;
-                    _session.Abandoned = true;
                     SetWaitingLocked();
+                    EnsureWorkerLocked();
                 }
-                EnsureWorkerLocked();
+                else SetDisabledLocked();
             }
             NotifyWorker();
         }

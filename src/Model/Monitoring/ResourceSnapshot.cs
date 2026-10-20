@@ -24,10 +24,14 @@ namespace WinMemoryCleaner
         public MetricValue CpuTemperature { get; set; }
         public MetricValue GpuTemperature { get; set; }
         public string GpuName { get; set; }
+        public string SensorBackendStatus { get; set; }
+        public string SensorDriverStatus { get; set; }
+        public string SensorDiagnostic { get; set; }
         public IList<ProcessSnapshot> Processes { get { return _processes; } }
         public ResourceSnapshot()
         {
             CpuUsage=GpuUsage=CpuTemperature=GpuTemperature=MetricValue.Missing(MetricStatus.WarmingUp,"No sample yet");
+            SensorBackendStatus="Disabled";SensorDriverStatus="NotChecked";SensorDiagnostic=string.Empty;
         }
     }
 }

@@ -134,12 +134,12 @@ $body=$body.Replace('$PSScriptRoot',"$repo\tools")
 - 快照 `SensorBackendStatus : string` / `SensorDriverStatus : string`；VM提供本地化状态行与安装进行中属性，安装操作与采样共享可信服务但不共享UI阻塞锁。
 - WMI独立LHM/OHM来源，提供者默认进程存在判断与30秒失败退避，共享selector禁止热点/距离冒充。
 
-- [ ] **Step 1: Write failing coordinator tests**：通用可用胜过原生，通用CPU失败/GPU成功可独立降级；有效原生仍探测通用；过期不显示旧值；所有来源失败“—”与原因；无提供者不加载WMI；OHM门控独立。
-- [ ] **Step 2: Implement coordination**：通用→ASUS/NVAPI→LHM/OHM，fallback详情标注真实提供者及降级原因；保留既有原生P/Invoke语义。
-- [ ] **Step 3: Write failing lifecycle/config tests**：1/2/5秒传配置；温度需求关闭/暂停停止；隐藏主窗但条仍需温度继续；UI Dispose不与pump采样并发释放且不等待2秒。
-- [ ] **Step 4: Implement optional configuration/status**：VM样本后台传刷新间隔，monitor的资源关闭保持pump串行；安装完成标志由后台重置后端。
-- [ ] **Step 5: Implement minimal UI**：既有温度/设置区域一行状态+安装按钮；明确确认说明官方共享系统驱动/只读用途/可能重启，取消不执行；中英/主题切换更新，条布局不变。
-- [ ] **Step 6: Run safe tests / isolated real window**：绑定日志0错误、紧凑横竖尺寸/焦点/穿透回归；不运行安装器；提交 `feat: integrate universal temperature status and safe fallback`。
+- [x] **Step 1: Write failing coordinator tests**：最初全套531项为15个协调/WMI断言失败及1个真实载荷Directory.Move暂态错误，分开记录；覆盖逐指标降级、失效清零、独立提供者门控。
+- [x] **Step 2: Implement coordination**：通用→ASUS/NVAPI→LHM/OHM，保留真实来源与失败原因；所有温度必须有限且1–150°C，保留既有原生P/Invoke语义。
+- [x] **Step 3: Write failing lifecycle/config tests**：五个生命周期断言RED后实现；慢暂停及驱动reset取消竞态有独立回归，UI撤销/Dispose不等待硬件。
+- [x] **Step 4: Implement optional configuration/status**：懒后台会话串行创建/配置/采样/暂停/释放，1/2/5秒配置；安装通知只记pending reset，后台采样才执行，不恢复取消需求。
+- [x] **Step 5: Implement minimal UI**：状态一行+明确确认按钮，取消零安装器创建；中英及de英文fallback、失败码/进度与迟到通知四项设置测试通过；条布局不变，实际安装器未执行。
+- [x] **Step 6: Run safe tests / isolated real window**：本地Release/Debug/Test构建通过；正确无头同场6/6（修复旧测试自建Application残留后0.2663944s），完整安全套件542/542（15.4915701s），包括ASUS15/15、原生11/11、内嵌2/2、控制器20/20；独立单STA实窗14/14（3.0066368s），后端9分析器35/35。未扩大Desktop排除、未改安全超时策略；主完整分析器由Task5 canonical CI验证。阶段提交 `feat: integrate universal temperature status and safe fallback`。
 
 ### Task 5: Evidence, canonical CI and release
 

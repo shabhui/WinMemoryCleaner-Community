@@ -198,6 +198,7 @@
     <Compile Include="Service\Monitoring\*.cs" />
     <Compile Include="Service\Monitoring\Sensors\*.cs" />
     <Compile Include="Interfaces\IResourceMonitor.cs" />
+    <Compile Include="Interfaces\ITemperatureConfiguration.cs" />
     <Compile Include="Interop\MonitoringNativeMethods.cs" />
     <Compile Include="ViewModel\MonitoringViewModel.cs" />
     <Compile Include="View\Control\SettingsPanel.xaml.cs"><DependentUpon>SettingsPanel.xaml</DependentUpon></Compile>

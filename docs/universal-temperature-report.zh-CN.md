@@ -1,6 +1,6 @@
 # 通用 CPU/GPU 温度检测验收记录
 
-> 进行中：Task 1–3 已完成本地实施与安全检查；Task 4 协调/设置接线、Task 5 canonical CI/性能/发布尚未完成。本文不能作为已发布新版或全部硬件实测通过的声明。
+> 进行中：Task 1–4 已完成本地实施与安全检查；Task 5 canonical CI、性能及发布尚未完成。本文不能作为已发布新版或全部硬件实测通过的声明。
 
 ## 固定架构与安全边界
 
@@ -26,7 +26,13 @@
 | 两后端 csproj 结构检查 | 本地 in-box MSBuild + Roslyn 编译器均 exit 0；测试链接 AssemblyInfo，版本 3.0.8.4；配置 1,840 B；此项不冒充 canonical VS 分析器构建 |
 | 载荷构建 | **24 个文件 / 25 个内嵌资源**；逐个 GZip round-trip、长度/哈希、锁定 DLL/安装器一致；失败编译器退出42时无新 staging 且旧载荷字节不变；manifest 最后发布 |
 | 真实主程序集内嵌验证 | 从当前程序集真实 manifest/gz 在隔离 scratch 根 Prepare；逐文件长度/SHA/lock/build-info、后端 metadata、资源名全部验证；不写真实用户缓存、不运行 EXE/安装器 |
-| 当前主安全套件 | 本地 net40/C#4/warnings-as-errors 重建后 **516/516，12.8692845 s**，0 errors / 0 failures；完整主程序集 canonical 分析器仍待 CI |
+| Task 3 主安全套件（阶段历史） | 本地 net40/C#4/warnings-as-errors 重建后 **516/516，12.8692845 s**；不是当前工作树最终结果 |
+| Task 4 协调/WMI/生命周期/调度/控制器 | 定向 **44/44，14.261 s**；驱动 reset 不恢复取消需求，慢暂停不占 UI 状态锁 |
+| Task 4 设置状态与显式确认替身 | 四项状态/中英/de fallback、取消零创建、进度失败码5、下一后台样本 reset、迟到通知不恢复需求；最终完整安全套件中 **4/4** |
+| Task 4 正确无头同场回归 | 旧 `WinMemoryCleaner.CommunityTests.HeadlessConcurrencyTests` 两项与设置四项同场；修复旧测试自建 Application 残留后 **6/6，0.2663944 s**，保留逐测试60秒超时 |
+| Task 4 当前完整主安全套件 | **542/542，15.4915701 s**，零错误/失败/未运行；包括 ASUS15、原生采样11、控制器20、真实内嵌2、旧无头2及新增设置4；仅排除原有 Manual/Desktop |
+| Task 4 独立实窗回归 | 独立单STA、不加逐测试timeout的 Desktop runner **14/14，3.0066368 s**；验证绑定、紧凑横竖布局、穿透/位置/语言、真实确认对话框取消。没有本轮新截图人工视觉验收 |
+| Task 4 生产配置 / 后端复验 | 最新本地生产 Release/Debug 与隔离 Test 重建 exit0（in-box开发检查）；后端完整9分析器编译及 **35/35，0.1955534 s**；主完整分析器仍待 canonical VS CI |
 
 分析器例外在 `sensors/GlobalSuppressions.cs` 逐项给出理由：协议/硬件边界的一般异常隔离、旧 FxCop 的弃用提示、后端未实例化的共享新鲜度类型、借入流的所有权，以及 net40 兼容证书 `Reset()` 的 native handle 释放。未修改 `AllRules.ruleset`，未扩大 Desktop/Manual 排除。
 
@@ -36,17 +42,25 @@
 - 上次外层调用重定向与脚本内部 `safe-tests.log` 冲突，没有有效新 XML。6,019,444,228 B 的 scratch 日志已保留有界头尾诊断后删除；后续外层日志与内部日志分开。
 - 后端测试分析器实际发现并修复四个空数组分配、缺少测试版本 metadata 和 NUnit `params object[]` 特性的 CLS 声明问题；未跳过测试或弱化分析器。
 
+### Task 4 实现与测试宿主修正
+
+- 通用后端始终优先探测；CPU/GPU 分别降级 ASUS/NVAPI、独立 LHM WMI、独立 OHM WMI，已有有效指标不会被后续来源覆盖。失败/过期不重放旧值；两个提供者分别使用30秒存在/失败门控，未发现提供者不加载查询。
+- `MonitoringSession` 在后台串行懒创建、配置、采样、暂停与释放；UI 只用短状态锁撤销需求，旧样本和迟到安装完成事件不能重新开启已取消的温度。
+- 起初协调红灯为15个行为断言失败及1个真实载荷目录移动错误；生命周期五个断言红灯、取消后 reset 的独立失败均保留。新增内部工厂入口先取得两项CS1729编译RED，不能当作全部行为RED。
+- 正确选择旧无头夹具后，六项同场首次出现四个60秒超时：旧测试留下 WPF Application，设置测试构造时等待已不泵送的 Dispatcher。隔离探针证实根因；旧测试现在仅关闭自己创建的 Application，并泵送关闭回调。产品构造/语言逻辑未改，安全套件策略未改。
+- Desktop 逐测试STA线程与共享 Application 不兼容，因此本地实窗证据来自独立单STA runner，外层仍有时间界限；不是 canonical 安全套件放宽超时。`de-DE` 未内嵌区域语言文件的测试宿主错误改为仓库实际支持的 `de`，新设置标签英文fallback得以验证。
+
 ## 保护环境复核
 
 - 用户原 EXE `D:\下载\WinMemoryCleaner.Community.exe` SHA-256 与基线一致：`E13B383CF807D379B1B18878CA411A2CD4A2131CD28C9A6815F205CC076B4114`；未覆盖。
 - 原 PID 23072 在记录到的系统重启（UTC `2026-10-19T22:05:24.5Z`）后已不存在，不能声称仍是同一存活实例；当前用户进程不结束。
 - 原开机任务仅 `RegistrationInfo/Date` 从 `2026-10-17T12:33:41` 变成 `2026-10-20T06:06:45`；其他 XML 字段一致。不恢复或改写用户任务。
 - HKLM 32/64 位清理器设置、共享 PawnIO 注册项与驱动字节仍匹配原基线；共享驱动 SHA-256：`E19F274B9F3C917445BFF19A80BBE2EE34A54995E62BE50073122B20D86AF900`。
-- 当前安全测试后无本任务拥有的后端/测试/构建孤儿；失败构建 staging 已清理。
+- Task 4 最终安全/实窗测试后无 session scratch 可执行进程（只读检查0）；当前保护用户PID14816，创建UTC `2026-10-19T22:06:40.5181131Z`，未结束。失败构建 staging 已清理；原任务raw XML检查仍仅报告上述注册时间差异，不能称其完全相同。
 
 ## 尚待完成 / 不得混用的证据
 
-1. 通用 → ASUS/NVAPI → 独立 LHM/OHM WMI 协调、刷新/暂停/设置状态与明确安装确认入口。
+1. Task 4 协调、后台生命周期和设置入口已完成本地验证；最新主完整分析器仍待 canonical CI。
 2. canonical `community-release.yml` 的同次后端/载荷/主 EXE 构建与两套完整安全测试，最终内嵌比对。
 3. 新版实机来源、三轮短时性能与十分钟留存；历史 v3.0.8.3、ASUS/NVAPI 备用、接口替身不能替代新版通用实测。
 4. 未授权可信 CPU 驱动安装；无对应 AMD CPU/GPU、Intel GPU 实物证据，必须标注未验证。

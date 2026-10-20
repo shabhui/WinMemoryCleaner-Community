@@ -343,31 +343,46 @@ namespace WinMemoryCleaner.CommunityTests
         [Test]
         public void DispatcherMarshalling_DoesNotWaitForBusyUiThread()
         {
+            var ownsApplication = System.Windows.Application.Current == null;
             var application = System.Windows.Application.Current ?? new System.Windows.Application();
-            Assert.IsTrue(application.Dispatcher.CheckAccess());
-            var invoke = typeof(NotificationService).GetMethod("InvokeOnUi", BindingFlags.Static | BindingFlags.NonPublic);
-            Exception error = null;
-            var callbackThread = 0;
-            var uiThread = Thread.CurrentThread.ManagedThreadId;
-            var worker = new Thread(() =>
+            try
             {
-                try
+                Assert.IsTrue(application.Dispatcher.CheckAccess());
+                var invoke = typeof(NotificationService).GetMethod("InvokeOnUi", BindingFlags.Static | BindingFlags.NonPublic);
+                Exception error = null;
+                var callbackThread = 0;
+                var uiThread = Thread.CurrentThread.ManagedThreadId;
+                var worker = new Thread(() =>
                 {
-                    invoke.Invoke(null, new object[] { (Action)(() => callbackThread = Thread.CurrentThread.ManagedThreadId) });
+                    try
+                    {
+                        invoke.Invoke(null, new object[] { (Action)(() => callbackThread = Thread.CurrentThread.ManagedThreadId) });
+                    }
+                    catch (Exception ex) { error = ex; }
+                });
+                worker.IsBackground = true;
+                worker.Start();
+                // Deliberately do not pump the UI queue until the background caller has returned.
+                var returnedWithoutUi = worker.Join(2000);
+                var frame = new DispatcherFrame();
+                application.Dispatcher.BeginInvoke(DispatcherPriority.Background, (Action)(() => frame.Continue = false));
+                Dispatcher.PushFrame(frame);
+                Assert.IsTrue(worker.Join(2000));
+                Assert.IsNull(error);
+                Assert.IsTrue(returnedWithoutUi, "Synchronous Dispatcher.Invoke would block here.");
+                Assert.AreEqual(uiThread, callbackThread);
+            }
+            finally
+            {
+                if (ownsApplication)
+                {
+                    application.Shutdown();
+                    var frame = new DispatcherFrame();
+                    application.Dispatcher.BeginInvoke(DispatcherPriority.Background, (Action)(() => frame.Continue = false));
+                    Dispatcher.PushFrame(frame);
+                    Assert.IsNull(System.Windows.Application.Current, "The headless test must not leave a dispatcher for later tests.");
                 }
-                catch (Exception ex) { error = ex; }
-            });
-            worker.IsBackground = true;
-            worker.Start();
-            // Deliberately do not pump the UI queue until the background caller has returned.
-            var returnedWithoutUi = worker.Join(2000);
-            var frame = new DispatcherFrame();
-            application.Dispatcher.BeginInvoke(DispatcherPriority.Background, (Action)(() => frame.Continue = false));
-            Dispatcher.PushFrame(frame);
-            Assert.IsTrue(worker.Join(2000));
-            Assert.IsNull(error);
-            Assert.IsTrue(returnedWithoutUi, "Synchronous Dispatcher.Invoke would block here.");
-            Assert.AreEqual(uiThread, callbackThread);
+            }
         }
 
         [Test]

@@ -66,6 +66,22 @@ namespace WinMemoryCleaner.Test
                 finally { ((IDisposable)pump).Dispose(); }
             }
         }
+        [Test]
+        public void SlowSuspend_DoesNotBlockUiDemandChangesOrDispose()
+        {
+            using(var entered=new ManualResetEvent(false))using(var release=new ManualResetEvent(false))using(var finished=new ManualResetEvent(false))using(var uiDone=new ManualResetEvent(false))
+            {
+                int calls=0;
+                var pump=(MonitoringPump)Pump(delegate(MonitoringDemand demand,int generation) { },delegate { if(Interlocked.Increment(ref calls)==1){entered.Set();release.WaitOne(4000);finished.Set();} });
+                try
+                {
+                    Demand(pump,false);Assert.IsTrue(entered.WaitOne(2000));
+                    ThreadPool.QueueUserWorkItem(delegate { Demand(pump,true);pump.Dispose();uiDone.Set(); });
+                    Assert.IsTrue(uiDone.WaitOne(200),"Neither UI demand changes nor Dispose may wait for a slow background suspend.");
+                }
+                finally { release.Set();Assert.IsTrue(finished.WaitOne(2000));uiDone.WaitOne(2000);pump.Dispose(); }
+            }
+        }
     }
 }
 #pragma warning restore 1591

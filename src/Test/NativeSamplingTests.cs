@@ -14,7 +14,7 @@ namespace WinMemoryCleaner.Test
         {
             var type=Assembly.GetExecutingAssembly().GetType("WinMemoryCleaner.ResourceMonitor");
             Assert.IsNotNull(type,"The real, demand-driven Windows sampler must exist.");
-            return (IDisposable)Activator.CreateInstance(type);
+            return new ResourceMonitor(new TemperatureSampler(null));
         }
         private static ResourceSnapshot Sample(IDisposable monitor,bool processes,bool temperatures)
         {
@@ -120,7 +120,7 @@ namespace WinMemoryCleaner.Test
         [Test]
         public void NativeSampler_SkipsLibreHardwareMonitorWmiWhenNoProviderProcessIsRunning()
         {
-            var sampler=new WinMemoryCleaner.TemperatureSampler();
+            var sampler=new WinMemoryCleaner.TemperatureSampler(null);
             try
             {
                 sampler.ProviderRunning=delegate{ return false; };
@@ -135,7 +135,7 @@ namespace WinMemoryCleaner.Test
         [Test]
         public void NativeSampler_AttemptsLibreHardwareMonitorWmiWhenProviderProcessIsRunning()
         {
-            var sampler=new WinMemoryCleaner.TemperatureSampler();
+            var sampler=new WinMemoryCleaner.TemperatureSampler(null);
             try
             {
                 sampler.ProviderRunning=delegate{ return true; };
@@ -150,7 +150,7 @@ namespace WinMemoryCleaner.Test
         [Test]
         public void NativeSampler_CachesPositiveProviderDetectionForTheGateWindow()
         {
-            var sampler=new WinMemoryCleaner.TemperatureSampler();
+            var sampler=new WinMemoryCleaner.TemperatureSampler(null);
             try
             {
                 int calls=0;
@@ -164,7 +164,7 @@ namespace WinMemoryCleaner.Test
         [Test]
         public void NativeSampler_DoesNotCacheNegativeOrFailedProviderDetection()
         {
-            var sampler=new WinMemoryCleaner.TemperatureSampler();
+            var sampler=new WinMemoryCleaner.TemperatureSampler(null);
             try
             {
                 int calls=0;
@@ -182,7 +182,7 @@ namespace WinMemoryCleaner.Test
         [Test]
         public void NativeSampler_ReportsMissingProviderAsNotDetectedRatherThanDefinitelyNotRunning()
         {
-            var sampler=new WinMemoryCleaner.TemperatureSampler();
+            var sampler=new WinMemoryCleaner.TemperatureSampler(null);
             try
             {
                 sampler.ProviderRunning=delegate{ return false; };

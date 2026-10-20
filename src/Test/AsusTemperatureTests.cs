@@ -78,7 +78,7 @@ namespace WinMemoryCleaner.Test
                 {
                     Assert.IsNull(reading.Value); Assert.IsNotEmpty(reading.Detail); return;
                 }
-                using (var sampler = new TemperatureSampler())
+                using (var sampler = new TemperatureSampler(null))
                 {
                     sampler.ProviderRunning = delegate { return false; };
                     MetricValue cpu, gpu; sampler.Sample(out cpu, out gpu);
