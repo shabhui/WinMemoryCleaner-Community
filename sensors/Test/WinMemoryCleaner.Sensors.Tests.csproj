@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <Import Project="..\Analyzers.props" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration><Platform Condition=" '$(Platform)' == '' ">x64</Platform>
+    <ProjectGuid>{629EBE6F-45E8-47C1-9221-C9250C417683}</ProjectGuid>
+    <OutputType>Library</OutputType><RootNamespace>WinMemoryCleaner.Sensors.Test</RootNamespace><AssemblyName>WinMemoryCleaner.Sensors.Tests</AssemblyName>
+    <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
+    <TargetFrameworkRootPath>$(MSBuildProjectDirectory)\..\..\build\sensors\packages\microsoft.netframework.referenceassemblies.net472.1.0.3\build\</TargetFrameworkRootPath>
+    <LangVersion>4</LangVersion><PlatformTarget>x64</PlatformTarget><Prefer32Bit>false</Prefer32Bit>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors><WarningLevel>4</WarningLevel><NoWarn>3001;3003</NoWarn>
+    <OutputPath>..\..\build\sensors\tests\</OutputPath><IntermediateOutputPath>..\..\build\sensors\obj-tests\</IntermediateOutputPath>
+    <DocumentationFile>..\..\build\sensors\tests\WinMemoryCleaner.Sensors.Tests.xml</DocumentationFile>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects><GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+    <Optimize>true</Optimize><DebugType>pdbonly</DebugType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" /><Compile Include="..\*.cs"><Link>Backend\%(Filename)%(Extension)</Link></Compile>
+    <Compile Include="..\Properties\AssemblyInfo.cs"><Link>Properties\AssemblyInfo.cs</Link></Compile>
+    <Compile Include="..\..\shared\Sensors\*.cs"><Link>Shared\%(Filename)%(Extension)</Link></Compile>
+    <Reference Include="System" /><Reference Include="System.Core" /><Reference Include="System.Management" /><Reference Include="System.Web.Extensions" />
+    <Reference Include="..\..\build\sensors\lib\*.dll"><Private>true</Private></Reference>
+    <Reference Include="nunit.framework"><HintPath>..\..\src\packages\NUnit.2.6.4\lib\nunit.framework.dll</HintPath></Reference>
+    <None Include="..\App.config"><Link>App.config</Link></None>
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

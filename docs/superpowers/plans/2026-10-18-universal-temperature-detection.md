@@ -118,12 +118,12 @@ $body=$body.Replace('$PSScriptRoot',"$repo\tools")
 - `SensorBackendController.Configure(int seconds)`、`GetSnapshot(out MetricValue cpu, out MetricValue gpu)`、`Suspend()`、`ResetDriverState()`、`Dispose()`，方法返回不等待采集。
 - 后端参数固定父PID/父creation time，会话来自configure；stdout只有hello/snapshot；配置刷新不增加进程。
 
-- [ ] **Step 1: Write backend adapter tests**：默认ControlMode不读取历史值，写入不保存；断言所有非CPU/GPU类别false；无驱动CPU关闭但GPU启用；扫描自有源码没有IControl控制调用。
-- [ ] **Step 2: Build/run to verify red then implement adapter/host**：更新枚举仅收温度候选，共享selector产代表值；EOF/父身份退出；stdin与stdout有界，未知配置终止；无设备也发状态帧。
-- [ ] **Step 3: Write controller process tests**：受控替身hello/snapshot/stop，覆盖启动预算、断管/退出、协议拒绝、stderr洪流16KiB、心跳超龄/30秒退避、刷新配置、需求取消与迟到准备、Job分配失败和最多一个后端。
-- [ ] **Step 4: Implement controller**：后台启动与读取线程，独占会话/generation；Job kill-on-close，固定启动目录并保持租约，2秒后仅杀自己的身份匹配子进程；缓存单调时钟和UTC验证，错误撤销旧值。
-- [ ] **Step 5: Build payload**：同次后端输出/配置/依赖/许可/官方安装器逐文件GZip，manifest记录相对单文件名、长度、SHA256、资源名；主项目动态嵌入资源，不依赖EXE旁置文件。
-- [ ] **Step 6: Run adapter/controller/safe tests**：无安装、无孤儿进程；本地C#4/warnings-as-errors通过，CI完整分析器单列；提交 `feat: add isolated read-only hardware temperature backend`。
+- [x] **Step 1: Write backend adapter tests**：默认ControlMode不读取历史值，写入不保存；所有非CPU/GPU类别false；父/子可信门控独立；自有源码控制接口调用扫描完成。
+- [x] **Step 2: Build/run to verify red then implement adapter/host**：adapter 16断言失败、host 7断言失败后实现；EOF/父身份、输入边界、单hello、无设备状态帧通过。真实ReadDevice用固定接口替身做设备级隔离，临时禁用collector得到6断言失败，恢复后全绿。
+- [x] **Step 3: Write controller process tests**：受控替身覆盖启动预算、断管/退出、协议拒绝、stderr洪流16KiB、心跳超龄/30秒退避、同PID刷新、需求取消与迟到准备、Job分配失败、至多一个后端；18断言失败后实现。
+- [x] **Step 4: Implement controller**：单后台worker串行拥有会话；Job kill-on-close、固定工作目录/父身份/租约、有界停止；UI调用立即撤销缓存，错误不续命旧值。19控制器测试通过。
+- [x] **Step 5: Build payload**：Roslyn/C#4/完整9分析器生产构建；24文件逐个GZip/round-trip校验，manifest最后发布；主程序真实25资源在独立scratch根逐文件校验；失败staging清理和旧载荷不变验证通过。
+- [x] **Step 6: Run adapter/controller/safe tests**：后端完整9分析器编译及35/35测试通过（0.203679s）；主程序本地net40/C#4/warnings-as-errors重建及516/516安全测试通过（12.8692845s）。两个csproj结构构建/配置、测试AssemblyInfo通过。无安装/无孤儿；主程序完整canonical分析器仍为Task5关卡。原PID23072在系统重启后不再存在，真实任务仅注册时间变化，EXE/HKLM/共享驱动未变；详见验收报告。
 
 ### Task 4: Temperature coordination, lifecycle and minimal UI
 

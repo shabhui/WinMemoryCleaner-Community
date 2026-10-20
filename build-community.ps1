@@ -11,7 +11,8 @@
 param(
     [switch]$Tests,
     [switch]$Package,
-    [string]$MSBuildPath = ''
+    [string]$MSBuildPath = '',
+    [string]$SensorCompilerPath = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,6 +53,19 @@ Write-Host ("TOOLCHAIN: {0} {1} ({2})" -f $msbuild, (Get-Item $msbuild).VersionI
 if (-not $canonicalToolchain) {
     Write-Host 'NOTE: the in-box tools version 4.0 does not load the analyzers of AllRules.ruleset. Pass -MSBuildPath to build the way CI does.'
 }
+
+# The isolated sensor backend and its verified payload are required build inputs: the payload is
+# embedded into the executable, so it must be produced from the same sources as this build.
+if (-not (Test-Path (Join-Path $repo 'build\sensors\lib\LibreHardwareMonitorLib.dll'))) {
+    Write-Host 'SENSORS: restoring the pinned sensor dependencies'
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'tools\restore-sensors.ps1') -ProjectRoot $repo
+    if ($LASTEXITCODE -ne 0) { throw 'Sensor dependency restore failed.' }
+}
+$sensorArguments = @()
+if (-not [string]::IsNullOrWhiteSpace($SensorCompilerPath)) { $sensorArguments = @('-CompilerPath', $SensorCompilerPath) }
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'tools\build-sensors.ps1') @sensorArguments
+if ($LASTEXITCODE -ne 0) { throw 'Sensor payload build failed.' }
+Write-Host 'SENSORS: payload staged in build\sensors\payload'
 
 function Assert-NotLocked([string]$path) {
     if (-not (Test-Path $path)) { return }

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <SensorAnalyzerPackages>$(MSBuildThisFileDirectory)..\src\packages\</SensorAnalyzerPackages>
+    <CodeAnalysisRuleSet>$(MSBuildThisFileDirectory)..\src\AllRules.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
+  <Import Project="$(SensorAnalyzerPackages)Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('$(SensorAnalyzerPackages)Microsoft.CodeAnalysis.FxCopAnalyzers.3.3.2\build\Microsoft.CodeAnalysis.FxCopAnalyzers.props')" />
+  <Import Project="$(SensorAnalyzerPackages)Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('$(SensorAnalyzerPackages)Microsoft.NetFramework.Analyzers.3.3.2\build\Microsoft.NetFramework.Analyzers.props')" />
+  <Import Project="$(SensorAnalyzerPackages)Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('$(SensorAnalyzerPackages)Microsoft.NetCore.Analyzers.3.3.2\build\Microsoft.NetCore.Analyzers.props')" />
+  <Import Project="$(SensorAnalyzerPackages)Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('$(SensorAnalyzerPackages)Microsoft.CodeQuality.Analyzers.3.3.2\build\Microsoft.CodeQuality.Analyzers.props')" />
+  <Import Project="$(SensorAnalyzerPackages)Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.props" Condition=" '$(MSBuildToolsVersion)' != '4.0' And Exists('$(SensorAnalyzerPackages)Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\build\Microsoft.CodeAnalysis.VersionCheckAnalyzer.props')" />
+  <ItemGroup>
+    <Analyzer Include="$(SensorAnalyzerPackages)Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\analyzers\dotnet\cs\Microsoft.CodeAnalysis.VersionCheckAnalyzer.resources.dll" />
+    <Analyzer Include="$(SensorAnalyzerPackages)Microsoft.CodeAnalysis.VersionCheckAnalyzer.3.3.2\analyzers\dotnet\Microsoft.CodeAnalysis.VersionCheckAnalyzer.dll" />
+    <Analyzer Include="$(SensorAnalyzerPackages)Microsoft.CodeQuality.Analyzers.3.3.2\analyzers\dotnet\cs\Humanizer.dll" />
+    <Analyzer Include="$(SensorAnalyzerPackages)Microsoft.CodeQuality.Analyzers.3.3.2\analyzers\dotnet\cs\Microsoft.CodeQuality.Analyzers.dll" />
+    <Analyzer Include="$(SensorAnalyzerPackages)Microsoft.CodeQuality.Analyzers.3.3.2\analyzers\dotnet\cs\Microsoft.CodeQuality.CSharp.Analyzers.dll" />
+    <Analyzer Include="$(SensorAnalyzerPackages)Microsoft.NetCore.Analyzers.3.3.2\analyzers\dotnet\cs\Microsoft.NetCore.Analyzers.dll" />
+    <Analyzer Include="$(SensorAnalyzerPackages)Microsoft.NetCore.Analyzers.3.3.2\analyzers\dotnet\cs\Microsoft.NetCore.CSharp.Analyzers.dll" />
+    <Analyzer Include="$(SensorAnalyzerPackages)Microsoft.NetFramework.Analyzers.3.3.2\analyzers\dotnet\cs\Microsoft.NetFramework.Analyzers.dll" />
+    <Analyzer Include="$(SensorAnalyzerPackages)Microsoft.NetFramework.Analyzers.3.3.2\analyzers\dotnet\cs\Microsoft.NetFramework.CSharp.Analyzers.dll" />
+  </ItemGroup>
+  <Target Name="EnsureSensorAnalyzers" BeforeTargets="PrepareForBuild" Condition=" '$(MSBuildToolsVersion)' != '4.0' ">
+    <Error Condition="!Exists('%(Analyzer.Identity)')" Text="Missing canonical sensor analyzer: %(Analyzer.Identity)" />
+  </Target>
+</Project>

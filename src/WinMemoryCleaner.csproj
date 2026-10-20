@@ -210,7 +210,20 @@
   <!-- Tests are built separately; the portable release has no NUnit dependency. -->
   <ItemGroup Condition=" '$(CommunityTestBuild)' == 'true' ">
     <Compile Include="Test\*.cs" />
+    <EmbeddedResource Include="Test\SensorBackendChild.cs"><LogicalName>WinMemoryCleaner.SensorBackendChild.cs</LogicalName></EmbeddedResource>
   </ItemGroup>
+  <!-- Sensor payload staged by tools/build-sensors.ps1; build-community.ps1 runs it before MSBuild. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\build\sensors\payload\*.gz">
+      <LogicalName>WinMemoryCleaner.Sensors.Payload.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\build\sensors\payload\sensors-payload.manifest.json">
+      <LogicalName>WinMemoryCleaner.Sensors.Payload.manifest.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+  <Target Name="EnsureSensorPayload" BeforeTargets="PrepareForBuild">
+    <Error Condition="!Exists('..\build\sensors\payload\sensors-payload.manifest.json')" Text="Missing verified sensor payload. Run tools\build-sensors.ps1 (build-community.ps1 does this) before building." />
+  </Target>
   <ItemGroup>
     <Content Include="..\README.md">
       <Link>README.md</Link>
