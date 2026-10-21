@@ -167,7 +167,7 @@ if ($Tests) {
 
     & $runner $sensorTests /framework:net-4.0 /exclude:Manual,Desktop /labels /timeout:60000 /noshadow /nologo "/work:$results" "/xml:$sensorXml"
     if ($LASTEXITCODE -ne 0) { throw "Backend safe test suite failed (results: $sensorXml)" }
-    Assert-TestReport $sensorXml 35
+    Assert-TestReport $sensorXml 36
 
     # /labels prints every test name as it starts, so a CI log always shows which test
     # is running when something stalls. /timeout bounds every single test: a hung test
@@ -176,7 +176,7 @@ if ($Tests) {
     & $runner $testExe /framework:net-4.0 /exclude:Manual,Desktop /labels /timeout:60000 /noshadow /nologo "/work:$results" "/xml:$xml"
     if ($LASTEXITCODE -ne 0) { throw "Safe test suite failed (results: $xml)" }
 
-    Assert-TestReport $xml 551
+    Assert-TestReport $xml 554
     Write-Host "TESTS OK (excluded categories: Manual, Desktop): $xml"
 
     $sourceBundle = Join-Path $repo ("build\sensors\WinMemoryCleaner.Community-$version-sensor-sources.zip")

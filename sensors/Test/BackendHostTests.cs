@@ -42,12 +42,13 @@ namespace WinMemoryCleaner.Sensors.Test
                 Assert.IsFalse(SensorParentIdentity.Matches(process,process.Id+1,ticks));
             }
         }
-        [Test]
-        public void HostWaitsForConfigurationThenSendsOneHelloAndStatusFrame()
+        [TestCase(false)][TestCase(true)]
+        public void HostWaitsForConfigurationThenSendsOneHelloAndStatusFrame(bool leadingBom)
         {
             using(var harness=new HostHarness())
             {
                 Assert.IsFalse(SpinWait.SpinUntil(delegate { return harness.Calls>0; },50));
+                if(leadingBom)harness.Input.Write(new byte[] { 0xEF,0xBB,0xBF },0,3);
                 harness.Send(new SensorMessage { Kind="configure",Session=Session,RefreshSeconds=2,CpuEnabled=false });
                 Assert.IsTrue(SpinWait.SpinUntil(delegate { return harness.Frames().Count>=2; },2000));
                 IList<SensorMessage> frames=harness.Frames();

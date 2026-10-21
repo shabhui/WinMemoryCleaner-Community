@@ -103,6 +103,30 @@ namespace WinMemoryCleaner.Test
             using(var stream=new MemoryStream(Encoding.UTF8.GetBytes("partial")))Assert.Throws<InvalidDataException>(delegate { new BoundedLineReader(stream).ReadLine(); });
         }
         [Test]
+        public void ReaderAcceptsUtf8BomOnlyAtStreamStart()
+        {
+            string frame=SensorProtocol.Encode(Snapshot());
+            using(var stream=new MemoryStream(Encoding.UTF8.GetBytes("\uFEFF"+frame+"\n\uFEFF"+frame+"\n")))
+            {
+                var reader=new BoundedLineReader(stream);Assert.AreEqual(frame,reader.ReadLine());
+                Assert.Throws<InvalidDataException>(delegate { SensorProtocol.Decode(reader.ReadLine()); });
+            }
+        }
+        [Test]
+        public void ReaderCountsUtf8BomTowardRawFrameLimit()
+        {
+            using(var stream=new MemoryStream(Encoding.UTF8.GetBytes("\uFEFF"+new string('a',SensorProtocol.MaximumFrameBytes-3)+"\n")))
+                Assert.AreEqual(SensorProtocol.MaximumFrameBytes-3,new BoundedLineReader(stream).ReadLine().Length);
+            using(var stream=new MemoryStream(Encoding.UTF8.GetBytes("\uFEFF"+new string('a',SensorProtocol.MaximumFrameBytes-2)+"\n")))
+                Assert.Throws<InvalidDataException>(delegate { new BoundedLineReader(stream).ReadLine(); });
+        }
+        [Test]
+        public void ReaderRejectsInvalidUtf8AfterLeadingBom()
+        {
+            using(var stream=new MemoryStream(new byte[] { 0xEF,0xBB,0xBF,0xC3,0x28,10 }))
+                Assert.Throws<InvalidDataException>(delegate { new BoundedLineReader(stream).ReadLine(); });
+        }
+        [Test]
         public void DuplicateAndOlderSequenceCannotRenewFreshness()
         {
             var fresh=new SensorFreshness(1000);var message=Snapshot();

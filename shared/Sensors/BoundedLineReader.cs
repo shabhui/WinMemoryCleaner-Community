@@ -11,6 +11,7 @@ namespace WinMemoryCleaner.Sensors
         private readonly byte[] _buffer=new byte[4096];
         private readonly byte[] _line=new byte[SensorProtocol.MaximumFrameBytes];
         private int _position,_count;
+        private bool _firstLine=true;
         private static readonly UTF8Encoding Utf8=new UTF8Encoding(false,true);
         internal BoundedLineReader(Stream stream)
         { if(stream==null)throw new ArgumentNullException("stream");_stream=stream; }
@@ -29,7 +30,10 @@ namespace WinMemoryCleaner.Sensors
                 if(value==10)
                 {
                     if(length>0&&_line[length-1]==13)length--;
-                    try { return Utf8.GetString(_line,0,length); }
+                    // Framework 4 may prepend the inherited console's UTF-8 preamble to redirected stdin.
+                    int offset=_firstLine&&length>=3&&_line[0]==0xEF&&_line[1]==0xBB&&_line[2]==0xBF?3:0;
+                    _firstLine=false;
+                    try { return Utf8.GetString(_line,offset,length-offset); }
                     catch(DecoderFallbackException ex) { throw new InvalidDataException("Invalid sensor UTF-8.",ex); }
                 }
                 if(length>=_line.Length)throw new InvalidDataException("Sensor frame exceeds 64 KiB before newline.");

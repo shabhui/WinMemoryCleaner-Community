@@ -13,8 +13,12 @@ internal static class SensorBackendChild
     private static readonly JavaScriptSerializer Json=new JavaScriptSerializer();
     private static int Main()
     {
+        using(var input=new StreamReader(Console.OpenStandardInput(),new UTF8Encoding(false,true),true,4096))return Run(input);
+    }
+    private static int Run(TextReader input)
+    {
         string mode=File.ReadAllText("mode.txt");
-        var config=Json.DeserializeObject(Console.ReadLine()) as Dictionary<string,object>;
+        var config=Json.DeserializeObject(input.ReadLine()) as Dictionary<string,object>;
         if(config==null)return 2;
         string session=(string)config["session"];
         using(var output=new StreamWriter(Console.OpenStandardOutput(),new UTF8Encoding(false),4096) { AutoFlush=true })
@@ -37,7 +41,7 @@ internal static class SensorBackendChild
             if(mode=="one-frame") { while(true)Thread.Sleep(100); }
             if(mode=="duplicate") { while(true) { Thread.Sleep(50);Snapshot(output,config,0,false); } }
             string line;
-            while((line=Console.ReadLine())!=null)
+            while((line=input.ReadLine())!=null)
             {
                 config=Json.DeserializeObject(line) as Dictionary<string,object>;
                 if((string)config["kind"]=="stop")
