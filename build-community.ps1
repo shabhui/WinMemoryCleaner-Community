@@ -49,8 +49,15 @@ if (-not $canonicalToolchain) {
 }
 if ($Package -and -not $canonicalToolchain) { throw 'Packaging requires Visual Studio MSBuild and the complete Roslyn analyzer set.' }
 if ($canonicalToolchain) {
-    $msbuildInfo = (Get-Item -LiteralPath $msbuild).VersionInfo
-    if ([int]$msbuildInfo.FileMajorPart -lt 16 -or $msbuildInfo.ProductName -notmatch 'Visual Studio') { throw 'Canonical builds require Visual Studio MSBuild 16 or newer; the in-box compiler is development-only.' }
+    $msbuildFile = Get-Item -LiteralPath $msbuild
+    $msbuildInfo = $msbuildFile.VersionInfo
+    if ([int]$msbuildInfo.FileMajorPart -lt 16) { throw 'Canonical builds require Visual Studio MSBuild 16 or newer; the in-box compiler is development-only.' }
+    # MSBuild's ProductName is not a stable Visual Studio identifier (including VS 18).
+    # Resolve the executable against the official installer inventory instead.
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Cannot verify a Visual Studio installation without its official vswhere inventory.' }
+    $installedBuilds = @(& $vswhere -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild\**\MSBuild.exe')
+    if ($LASTEXITCODE -ne 0 -or @($installedBuilds | Where-Object { [String]::Equals($_, $msbuildFile.FullName, [StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) { throw 'The selected MSBuild is not in a registered Visual Studio installation.' }
     $SensorCompilerPath = Join-Path (Split-Path -Parent $msbuild) 'Roslyn\csc.exe'
     if (-not (Test-Path -LiteralPath $SensorCompilerPath)) { throw 'The canonical MSBuild installation is missing its Roslyn C# compiler.' }
 }
