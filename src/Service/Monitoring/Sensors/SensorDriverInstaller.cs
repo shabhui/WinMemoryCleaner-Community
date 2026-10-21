@@ -2,7 +2,6 @@ using System;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
-using System.IO;
 using System.Threading;
 using WinMemoryCleaner.Sensors;
 
@@ -96,7 +95,7 @@ namespace WinMemoryCleaner
         private static int RunOfficialInstaller(string path)
         {
             // Fixed -install selects the normal official edition; no unrestricted, silent, uninstall or reboot switches.
-            var start = new ProcessStartInfo(path, "-install") { UseShellExecute = true, Verb = "runas", WorkingDirectory = Path.GetDirectoryName(path) };
+            var start = new ProcessStartInfo(path, "-install") { UseShellExecute = true, Verb = "runas", WorkingDirectory = Environment.SystemDirectory };
             using (Process process = Process.Start(start))
             {
                 if (process == null) throw new Win32Exception("Official installer did not start.");

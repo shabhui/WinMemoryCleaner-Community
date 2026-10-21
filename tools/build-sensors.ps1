@@ -20,7 +20,8 @@ before use. tools/build-sensors.ps1 is the only supported producer of that direc
 [CmdletBinding()]
 param(
     [string]$CompilerPath = '',
-    [string]$OutputDirectory = ''
+    [string]$OutputDirectory = '',
+    [switch]$Tests
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -146,6 +147,35 @@ $compileCode = $LASTEXITCODE
 if ($compileCode -ne 0) { throw "The sensor backend did not compile cleanly (exit $compileCode); warnings are errors and the analyzer ruleset was applied." }
 if (-not (Test-Path -LiteralPath $executablePath)) { throw 'The sensor backend executable was not produced.' }
 
+# Test code is compiled with the exact compiler, references, sources and analyzer set used above.
+# It is never included in the executable payload, and all hardware/installer paths use substitutes.
+if ($Tests)
+{
+    $testAssembly = Join-Path $staging 'WinMemoryCleaner.Sensors.Tests.dll'
+    $nunitPath = Join-Path $ProjectRoot 'src\packages\NUnit.2.6.4\lib\nunit.framework.dll'
+    if (-not (Test-Path -LiteralPath $nunitPath)) { throw 'Missing NUnit framework for the backend safety suite.' }
+    $testArguments = New-Object System.Collections.Generic.List[string]
+    foreach ($argument in @('/noconfig','/nostdlib+','/nologo','/langversion:4','/platform:x64','/warn:4','/warnaserror+','/nowarn:3001,3003','/optimize+','/deterministic+','/define:TRACE','/target:library')) { $testArguments.Add($argument) }
+    $testArguments.Add('/ruleset:' + $rulesetPath)
+    $testArguments.Add('/out:' + $testAssembly)
+    foreach ($reference in $references) { $testArguments.Add('/reference:' + $reference) }
+    foreach ($library in $runtimeLibraries) { $testArguments.Add('/reference:' + $library) }
+    $testArguments.Add('/reference:' + $nunitPath)
+    foreach ($analyzer in $analyzerPaths) { $testArguments.Add('/analyzer:' + $analyzer) }
+    foreach ($source in $sourcePaths) { $testArguments.Add($source) }
+    foreach ($test in @(Get-ChildItem -LiteralPath (Join-Path $ProjectRoot 'sensors\Test') -File -Filter '*.cs' | Sort-Object Name)) { $testArguments.Add($test.FullName) }
+    $testArgumentArray = $testArguments.ToArray()
+    Write-Host ('Compiling backend safety tests with the same ' + $analyzerPaths.Count + ' analyzers')
+    & $compiler @testArgumentArray
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $testAssembly)) { throw 'The backend safety tests did not compile with the complete analyzer set.' }
+    $testDirectory = Join-Path $ProjectRoot 'build\sensors\tests'
+    [void][System.IO.Directory]::CreateDirectory($testDirectory)
+    [System.IO.File]::Copy($testAssembly,(Join-Path $testDirectory 'WinMemoryCleaner.Sensors.Tests.dll'),$true)
+    [System.IO.File]::Copy((Join-Path $ProjectRoot 'sensors\App.config'),(Join-Path $testDirectory 'WinMemoryCleaner.Sensors.Tests.dll.config'),$true)
+    [System.IO.File]::Copy($nunitPath,(Join-Path $testDirectory 'nunit.framework.dll'),$true)
+    foreach ($library in $runtimeLibraries) { [System.IO.File]::Copy($library,(Join-Path $testDirectory ([System.IO.Path]::GetFileName($library))),$true) }
+}
+
 $staged = New-Object System.Collections.Generic.List[object]
 $staged.Add([pscustomobject]@{ Path = 'WinMemoryCleaner.Sensors.exe'; Source = $executablePath })
 $configPath = Join-Path $staging 'WinMemoryCleaner.Sensors.exe.config'
@@ -239,5 +269,6 @@ finally
     analyzers = $analyzerPaths.Count
     files = $files.Count
     payloadDirectory = $OutputDirectory
+    backendTestsBuilt = [bool]$Tests
     installerExecuted = $false
 } | ConvertTo-Json

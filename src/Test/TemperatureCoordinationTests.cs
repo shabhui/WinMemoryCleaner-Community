@@ -99,7 +99,7 @@ namespace WinMemoryCleaner.Test
         {
             var backend=new Backend { Cpu=Value(invalid,"invalid universal"),Gpu=Value(46,"Universal GPU") };var native=new Source { Cpu=Value(58,"ASUS") };
             using(var sampler=new TemperatureSampler(backend,native,new Source(),new Source()))
-            { MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);Assert.AreEqual(58,cpu.Value);StringAssert.Contains("invalid",cpu.Detail.ToLowerInvariant());Assert.AreEqual(46,gpu.Value); }
+            { MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);Assert.AreEqual(58,cpu.Value);StringAssert.Contains("INVALID",cpu.Detail.ToUpperInvariant());Assert.AreEqual(46,gpu.Value); }
         }
         [Test]
         public void ConfigurationStatusAndOwnedLifecycleAreForwardedWithoutSampling()

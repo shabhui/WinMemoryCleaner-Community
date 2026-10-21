@@ -147,13 +147,13 @@ $body=$body.Replace('$PSScriptRoot',"$repo\tools")
 
 **Interfaces:** `build-community.ps1 -Tests -Package -MSBuildPath <VS MSBuild>` 按依赖恢复→后端→载荷→主EXE→两套安全测试→内嵌完整性验证→发布资产顺序执行。
 
-- [ ] **Step 1: Add build verification**：比较主EXE内嵌每文件与本次后端/锁定依赖字节；缺载荷构建不能发布；运行全部自有源码完整分析器，不放宽规则或扩大Desktop排除。
-- [ ] **Step 2: Run local functional/fault checks**：真实提供者/状态连续样本，1/2/5秒、取消/暂停/退出，无驱动也验证GPU独立工作；受控后端挂起/退出后UI保持响应。
-- [ ] **Step 3: Run performance evidence**：2秒模式3×30秒预热/60秒测量；分别记录主/后端/合计CPU私有内存、UIp95；10分钟留存；目标合计全机CPU中位<1%、UIp95≤50ms、增长≤10MiB。未授权CPU驱动和无AMD/IntelGPU实物明确未验。
-- [ ] **Step 4: Update docs/version**：查询远端tag占用，AssemblyVersion/FileVersion=3.0.8.4且Info=3.0.8.4-community.4；成本/运行时/驱动确认/非全硬件保证写明，新证据不借用历史数据。
+- [x] **Step 1: Add build verification**：真实25资源逐文件与同次锁/后端/build-info核对；完整9分析器的本地生产/Test构建及551/551主安全、35/35后端、内嵌2/2通过，保留规则与Desktop排除。一次独立审查无Critical/Important；已复现并修复启动预算、stop、非法路径和暂存回收，发布分支/标签门控一并完善。canonical执行仍由Step5确认。
+- [x] **Step 2: Run local functional/fault checks**：最终界面修复后的生产实窗75通过/0失败/1通用CPU不可验证（含4项清理）；真实GPU与ASUS备用分别记录，1/2/5秒连续帧、取消/暂停/恢复/退出、自有后端挂起/退出和UI响应已验。14/14窗口回归通过；准备取消两项实际行为RED后finally清理修复，完整复测545/545。
+- [x] **Step 3: Run performance evidence**：2秒模式3×30秒预热/60秒测量及30/600秒留存均通过，独立重算780个测量样本。三短轮合计全机CPU中位0.095994/0.096521/0.096461%，UIp95最高0.8464ms，留存增长5.266MiB；主/后端及合计分别记录。测量本地EXE哈希0a45…690b4，非最终canonical产物；未授权CPU驱动和无AMD/IntelGPU实物明确未验。
+- [x] **Step 4: Update docs/version**：远端预定tag未占用，AssemblyVersion/FileVersion=3.0.8.4且Info=3.0.8.4-community.4；README/CHANGELOG/指南/验收报告写明成本、运行时、驱动确认和硬件边界，性能数据固定本地构建哈希且不冒充最终发布资产。
 - [ ] **Step 5: Push and run canonical workflows**：普通非强推；网络失败逐blob/tree核对后Git Data API force=false；先无发布的canonical构建排除分析器错误，修具体错误后复验；全部绿色再发布未占用tag。
 - [ ] **Step 6: Verify final release**：下载最终EXE到无旁置文件干净目录，校验版本/sidecar/latest/内嵌载荷和实际准备；不启动受保护身份冲突的生产实例；隔离验证不得修改真实设置。
-- [ ] **Step 7: Verify cleanup**：用户EXE hash、PID23072creation time、HKLM32/64与原任务未变；无测试/采集孤儿；发布报告区分已验证、模拟与未授权部分；提交证据文档及最终汇报。
+- [ ] **Step 7: Verify cleanup**：用户EXE hash、当前用户进程、HKLM32/64及原任务复核，无测试/采集孤儿；原PID23072在系统重启后已不存在，任务仅已记录注册时间变化，不伪称原实例存活/任务完全相同；区分已验、模拟与未授权证据并最终汇报。
 
 ## Self-review (2026-10-18)
 

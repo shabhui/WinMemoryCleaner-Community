@@ -65,38 +65,67 @@ namespace WinMemoryCleaner
                     using (var rootLease = new SensorPayloadLease(_root))
                     {
                         rootLease.LockDirectories();
+                        string stagingPrefix = ".prepare-" + _manifestHash.Substring(0, 20) + "-";
+                        foreach (string abandoned in System.IO.Directory.GetDirectories(_root, stagingPrefix + "*")) DeleteStaging(abandoned);
                         SensorPayloadLease existing = OpenVerified();
                         if (existing != null) return existing;
                         if (System.IO.Directory.Exists(_directory)) { CheckTree(_directory); System.IO.Directory.Delete(_directory, true); }
-                        string staging = Path.Combine(_root, ".prepare-" + Guid.NewGuid().ToString("N"));
+                        string staging = Path.Combine(_root, stagingPrefix + Guid.NewGuid().ToString("N"));
                         if (System.IO.Directory.Exists(staging) || File.Exists(staging)) throw new IOException("Sensor staging path already exists.");
                         System.IO.Directory.CreateDirectory(staging);
                         try
                         {
                             foreach (PayloadFile file in _files) Extract(staging, file);
-                            System.IO.Directory.Move(staging, _directory);
+                            PublishStaging(staging);
                             SensorPayloadLease ready = OpenVerified();
                             if (ready == null) throw new InvalidDataException("Prepared sensor payload failed verification.");
                             return ready;
                         }
-                        finally
-                        {
-                            if (System.IO.Directory.Exists(staging))
-                                try { CheckTree(staging); System.IO.Directory.Delete(staging, true); } catch (IOException) { }
-                        }
+                        finally { DeleteStaging(staging); }
                     }
                 }
                 finally { mutex.ReleaseMutex(); }
             }
         }
 
+        private static void DeleteStaging(string staging)
+        {
+            try
+            {
+                if (!System.IO.Directory.Exists(staging)) return;
+                CheckTree(staging);
+                System.IO.Directory.Delete(staging, true);
+            }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            catch (InvalidDataException) { }
+        }
+
+        private void PublishStaging(string staging)
+        {
+            // A newly extracted EXE can briefly be held by a scanner without delete sharing.
+            // Retry only transient move failures on the preparation worker, never accept stale bytes.
+            for (int attempt = 0; ; attempt++)
+            {
+                try { System.IO.Directory.Move(staging, _directory); return; }
+                catch (IOException error)
+                {
+                    int code = Marshal.GetHRForException(error) & 0xFFFF;
+                    if (attempt >= 10 || (code != 5 && code != 32 && code != 33)) throw;
+                    CheckTree(staging);
+                    if (System.IO.Directory.Exists(_directory) || File.Exists(_directory)) throw;
+                    Thread.Sleep(100);
+                }
+            }
+        }
+
         private SensorPayloadLease OpenVerified()
         {
             if (!System.IO.Directory.Exists(_directory)) return null;
-            var lease = new SensorPayloadLease(_directory);
-            bool valid = false;
+            SensorPayloadLease lease = null;
             try
             {
+                lease = new SensorPayloadLease(_directory);
                 lease.LockDirectories();
                 string[] entries = System.IO.Directory.GetFileSystemEntries(_directory);
                 foreach (string entry in entries)
@@ -111,9 +140,11 @@ namespace WinMemoryCleaner
                     FileStream input = lease.LockFile(Path.Combine(_directory, file.Path));
                     if (input.Length != file.Length || !String.Equals(Hash(input), file.Hash, StringComparison.Ordinal)) return null;
                 }
-                valid = true; return lease;
+                SensorPayloadLease verified = lease;
+                lease = null; // Transfer every locked handle to the caller.
+                return verified;
             }
-            finally { if (!valid) lease.Dispose(); }
+            finally { if (lease != null) lease.Dispose(); }
         }
 
         private void Extract(string staging, PayloadFile file)
@@ -211,9 +242,25 @@ namespace WinMemoryCleaner
         internal void LockDirectories() { foreach (string part in PayloadFileAccess.DirectoryChain(_directory)) _locks.Add(PayloadFileAccess.Open(part, true)); }
         internal FileStream LockFile(string path)
         {
-            SafeFileHandle handle = PayloadFileAccess.Open(path, false);
-            try { var input = new FileStream(handle, FileAccess.Read, 8192, false); _locks.Add(input); return input; }
-            catch { handle.Dispose(); throw; }
+            SafeFileHandle handle = null;
+            FileStream input = null;
+            try
+            {
+                handle = PayloadFileAccess.Open(path, false);
+                _locks.Add(handle);
+                SafeFileHandle lockedHandle = handle;
+                handle = null; // The lease explicitly retains the shared SafeFileHandle.
+                input = new FileStream(lockedHandle, FileAccess.Read, 8192, false);
+                _locks.Add(input);
+                FileStream locked = input;
+                input = null; // The lease retains the stream until backend/installer exit.
+                return locked;
+            }
+            finally
+            {
+                if (input != null) input.Dispose();
+                if (handle != null) handle.Dispose();
+            }
         }
         public void Dispose() { Dispose(true); GC.SuppressFinalize(this); }
         private void Dispose(bool disposing)

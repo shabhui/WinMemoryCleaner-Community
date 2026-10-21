@@ -23,16 +23,16 @@ namespace WinMemoryCleaner
 
         internal SensorJob()
         {
-            SafeJobHandle handle = CreateJobObject(IntPtr.Zero, null);
-            bool owned = false;
+            SafeJobHandle handle = null;
             try
             {
+                handle = CreateJobObject(IntPtr.Zero, null);
                 if (handle == null || handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot create a sensor job object.");
                 ApplyKillOnClose(handle);
-                owned = true;
                 _handle = handle;
+                handle = null; // Ownership is now held by this job.
             }
-            finally { if (!owned && handle != null) handle.Dispose(); }
+            finally { if (handle != null) handle.Dispose(); }
         }
 
         /// <summary>Assigns exactly the given process handle; a closed or reused handle cannot be substituted.</summary>

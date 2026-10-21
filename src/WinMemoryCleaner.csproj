@@ -312,6 +312,10 @@
     <Analyzer Include="packages\Microsoft.NetFramework.Analyzers.3.3.2\analyzers\dotnet\cs\Microsoft.NetFramework.CSharp.Analyzers.dll" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <Target Name="EnsureCommunityAnalyzers" BeforeTargets="PrepareForBuild" Condition=" '$(MSBuildToolsVersion)' != '4.0' ">
+    <Error Condition="!Exists('%(Analyzer.Identity)')" Text="Missing canonical community analyzer: %(Analyzer.Identity)" />
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)\AllRules.ruleset')" Text="Missing canonical AllRules.ruleset." />
+  </Target>
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>

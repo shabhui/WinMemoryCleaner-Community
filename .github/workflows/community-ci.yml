@@ -1,12 +1,12 @@
 name: Community CI
 
-# Non-publishing CI for the community continuation: build both configurations and
-# run the safe NUnit suite. No signing, no release, no package-manager submission.
+# Non-publishing CI: complete Roslyn analysis, both isolated safe NUnit suites and
+# same-build embedded payload verification. No driver installation or publication.
 
 on:
   push:
     branches: [community, main]
-    paths: ['src/**', 'build-community.ps1']
+    paths: ['src/**', 'sensors/**', 'shared/**', 'tools/**', 'build-community.ps1', '.github/workflows/community-*.yml']
   pull_request:
     branches: [community, main]
   workflow_dispatch:
@@ -67,26 +67,16 @@ jobs:
           Write-Host "MSBuild: $msbuild"
           & .\build-community.ps1 -Tests -MSBuildPath $msbuild
 
-      - name: Collect test results
-        if: always()
-        shell: pwsh
-        run: |
-          # The build script writes the NUnit report into the repository
-          # (build\test-results), so it can be published from a stable path.
-          $report = 'build\test-results\TestResults.xml'
-          if (Test-Path $report) {
-            New-Item -ItemType Directory -Path TestResults -Force | Out-Null
-            Copy-Item $report (Join-Path 'TestResults' 'TestResults.xml') -Force
-            Write-Host "Collected $report"
-          } else {
-            Write-Host 'No NUnit report found'
-          }
-
-      - name: Upload test results
+      - name: Upload both test suites and payload verification
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ github.run_number }}
-          path: TestResults/TestResults.xml
+          path: |
+            build/test-results/TestResults.xml
+            build/test-results/SensorTestResults.xml
+            build/test-results/*payload.json
+            build/test-results/source-bundle.json
+            build/test-results/SourceBundleTests.json
           if-no-files-found: warn
           retention-days: 14

@@ -10,6 +10,7 @@ using System.Threading;
 using System.Web.Script.Serialization;
 using NUnit.Framework;
 using WinMemoryCleaner.Sensors;
+using Microsoft.Win32.SafeHandles;
 
 #pragma warning disable 1591
 namespace WinMemoryCleaner.Test
@@ -66,6 +67,73 @@ namespace WinMemoryCleaner.Test
                 Assert.IsNotNull(lease);Assert.IsTrue(File.Exists(lease.Executable));Assert.IsTrue(File.Exists(lease.Installer));
                 Assert.AreEqual(_files.Count,Directory.GetFiles(lease.Directory).Length);Assert.AreEqual(0,Directory.GetDirectories(lease.Directory).Length);
                 foreach(var pair in _files)CollectionAssert.AreEqual(pair.Value,File.ReadAllBytes(Path.Combine(lease.Directory,pair.Key)));
+            }
+        }
+        [Test]
+        public void TransientFileReadHandleDoesNotFailVerifiedPreparation()
+        {
+            SafeFileHandle blocker = null;
+            Thread release = null;
+            int read = 0;
+            try
+            {
+                var payload = new SensorPayload(_root, Manifest(null, null, null), delegate(string name)
+                {
+                    Stream resource = Resource(name);
+                    if (++read != _files.Count) return resource;
+                    byte[] compressed = ((MemoryStream)resource).ToArray();
+                    resource.Dispose();
+                    return new ClosingResource(compressed, delegate
+                    {
+                        blocker = PayloadFileAccess.Open(Path.Combine(Directory.GetDirectories(_root)[0], "PawnIO_setup.exe"), false);
+                        release = new Thread(delegate() { Thread.Sleep(300); blocker.Dispose(); });
+                        release.Start();
+                    });
+                });
+                var watch = Stopwatch.StartNew();
+                Assert.DoesNotThrow(delegate
+                {
+                    using (var lease = payload.Prepare())
+                    {
+                        Assert.IsNotNull(lease);
+                        foreach (var pair in _files) CollectionAssert.AreEqual(pair.Value, File.ReadAllBytes(Path.Combine(lease.Directory, pair.Key)));
+                        Assert.Throws<IOException>(delegate { File.WriteAllText(lease.Executable, "replacement"); });
+                    }
+                });
+                Assert.Less(watch.ElapsedMilliseconds, 2000, "A transient move lock must not exhaust the preparation budget.");
+            }
+            finally
+            {
+                if (release != null && release.IsAlive) Assert.IsTrue(release.Join(2000));
+                if (blocker != null) blocker.Dispose();
+            }
+        }
+        [Test]
+        public void PermanentFileReadHandleFailsBoundedlyWithoutPublishingPayload()
+        {
+            SafeFileHandle blocker = null;
+            int read = 0;
+            byte[] manifest = Manifest(null, null, null);
+            try
+            {
+                var payload = new SensorPayload(_root, manifest, delegate(string name)
+                {
+                    Stream resource = Resource(name);
+                    if (++read != _files.Count) return resource;
+                    byte[] compressed = ((MemoryStream)resource).ToArray();
+                    resource.Dispose();
+                    return new ClosingResource(compressed, delegate { blocker = PayloadFileAccess.Open(Path.Combine(Directory.GetDirectories(_root)[0], "PawnIO_setup.exe"), false); });
+                });
+                var watch = Stopwatch.StartNew();
+                Assert.Throws<IOException>(delegate { using (var lease = payload.Prepare()) Assert.IsNotNull(lease); });
+                Assert.Less(watch.ElapsedMilliseconds, 2000);
+                Assert.IsFalse(Directory.Exists(Path.Combine(_root, Hash(manifest))), "A locked staging directory cannot become a ready cache.");
+            }
+            finally { if (blocker != null) blocker.Dispose(); }
+            using(var lease=Payload().Prepare())
+            {
+                Assert.IsNotNull(lease);
+                Assert.AreEqual(1,Directory.GetDirectories(_root).Length,"The next preparation must reclaim its abandoned staging directory.");
             }
         }
         [TestCase("../outside.exe")]
@@ -128,6 +196,38 @@ namespace WinMemoryCleaner.Test
             }
             try { Assert.Throws<InvalidDataException>(delegate { payload.Prepare(); });Assert.IsTrue(File.Exists(Path.Combine(target,"WinMemoryCleaner.Sensors.exe"))); }
             finally{Directory.Delete(cache);}
+        }
+        [Test]
+        public void AbandonedStagingCleanupPreservesJunctionTargetAndOtherVersions()
+        {
+            Directory.CreateDirectory(_root);
+            string target=Path.Combine(_root,"retained"),foreign=Path.Combine(_root,".prepare-"+new string('0',64)+"-foreign");
+            Directory.CreateDirectory(target);Directory.CreateDirectory(foreign);File.WriteAllText(Path.Combine(target,"keep.txt"),"keep");
+            string junction=Path.Combine(_root,".prepare-"+Hash(Manifest(null,null,null)).Substring(0,20)+"-abandoned");
+            using(var process=new Process())
+            {
+                process.StartInfo=new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,"cmd.exe"),"/d /c mklink /J \""+junction+"\" \""+target+"\"") { UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true };
+                Assert.IsTrue(process.Start());Assert.IsTrue(process.WaitForExit(2000));Assert.AreEqual(0,process.ExitCode,process.StandardError.ReadToEnd());
+            }
+            try
+            {
+                using(var lease=Payload().Prepare())Assert.IsNotNull(lease);
+                Assert.AreEqual("keep",File.ReadAllText(Path.Combine(target,"keep.txt")));
+                Assert.IsTrue(Directory.Exists(foreign),"Another manifest's preparation must not be removed.");
+                Assert.IsTrue(Directory.Exists(junction),"Unsafe staging must be left untouched.");
+            }
+            finally { Directory.Delete(junction); }
+        }
+        private sealed class ClosingResource : MemoryStream
+        {
+            private readonly Action _onClose;
+            private bool _closed;
+            internal ClosingResource(byte[] bytes, Action onClose) : base(bytes, false) { _onClose = onClose; }
+            protected override void Dispose(bool disposing)
+            {
+                base.Dispose(disposing);
+                if (disposing && !_closed) { _closed = true; _onClose(); }
+            }
         }
     }
 }

@@ -33,8 +33,8 @@ namespace WinMemoryCleaner.Test
         [Test]
         public void SessionIsLazyAndForwardsNormalizedRefreshAndStatus()
         {
-            var monitor=new Monitor();int creations=0;
-            using(var session=new MonitoringSession(delegate { creations++;return monitor; }))
+            Monitor monitor=null;int creations=0;
+            using(var session=new MonitoringSession(delegate { creations++;return monitor=new Monitor(); }))
             {
                 session.SetDemand(Demand(true));session.RequestDriverReset();Assert.AreEqual(0,creations);
                 ResourceSnapshot snapshot=null;
@@ -47,8 +47,8 @@ namespace WinMemoryCleaner.Test
         [Test]
         public void CancelledTemperatureDemandCannotBeResurrectedByAnOldSample()
         {
-            var monitor=new Monitor();
-            using(var session=new MonitoringSession(delegate { return monitor; }))
+            Monitor monitor=null;
+            using(var session=new MonitoringSession(delegate { return monitor=new Monitor(); }))
             {
                 session.SetDemand(Demand(true));session.Sample(Demand(true),2);Assert.IsTrue(monitor.Requested);
                 session.SetDemand(Demand(false));Assert.IsFalse(monitor.Requested);
@@ -62,8 +62,8 @@ namespace WinMemoryCleaner.Test
         {
             using(var entered=new ManualResetEvent(false))using(var release=new ManualResetEvent(false))using(var finished=new ManualResetEvent(false))using(var disposed=new ManualResetEvent(false))
             {
-                var monitor=new Monitor { DuringSample=delegate { entered.Set();release.WaitOne(4000); },OnDispose=delegate { disposed.Set(); } };
-                var session=new MonitoringSession(delegate { return monitor; });session.SetDemand(Demand(true));
+                Monitor monitor=null;
+                var session=new MonitoringSession(delegate { return monitor=new Monitor { DuringSample=delegate { entered.Set();release.WaitOne(4000); },OnDispose=delegate { disposed.Set(); } }; });session.SetDemand(Demand(true));
                 ThreadPool.QueueUserWorkItem(delegate { try { session.Sample(Demand(true),2); } finally { finished.Set(); } });
                 try
                 {
@@ -80,8 +80,8 @@ namespace WinMemoryCleaner.Test
         {
             using(var sampled=new ManualResetEvent(false))
             {
-                var monitor=new Monitor();int ui=Thread.CurrentThread.ManagedThreadId;
-                using(var session=new MonitoringSession(delegate { return monitor; }))
+                Monitor monitor=null;int ui=Thread.CurrentThread.ManagedThreadId;
+                using(var session=new MonitoringSession(delegate { return monitor=new Monitor(); }))
                 using(var pump=new MonitoringPump(delegate(MonitoringDemand demand,int generation) { session.Sample(demand,5);sampled.Set(); },session.Suspend))
                 {
                     var demand=MonitoringPolicy.GetDemand(false,false,true,true);session.SetDemand(demand);pump.SetDemand(demand,5);

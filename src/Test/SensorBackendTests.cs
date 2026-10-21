@@ -120,6 +120,34 @@ namespace WinMemoryCleaner.Test
                 clock.Advance(1);Assert.IsTrue(Wait(delegate { Gpu(controller);return prepares==2; }));
             }
         }
+        [Test]
+        public void SlowPreparationDoesNotConsumeFirstStatusBudget()
+        {
+            using(var entered=new ManualResetEvent(false))using(var release=new ManualResetEvent(false))
+            {
+                var clock=new Clock();SensorPayload payload=Payload("normal");
+                var controller=new SensorBackendController(delegate { entered.Set();release.WaitOne();return payload.Prepare(); },delegate { return new SensorJob(); },clock.Now,Ready);
+                try
+                {
+                    Gpu(controller);Assert.IsTrue(entered.WaitOne(2000));clock.Advance(20);
+                    Assert.AreEqual(MetricStatus.WarmingUp,Gpu(controller).Status,"The handshake budget starts only after the child starts.");
+                    release.Set();Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));
+                }
+                finally { release.Set();controller.Dispose(); }
+            }
+        }
+        [Test]
+        public void SuspendSendsSessionStopBeforeTerminatingOwnedChild()
+        {
+            string marker=Path.Combine(_root,Guid.NewGuid().ToString("N")+".stopped");
+            using(var controller=Controller("stop-marker:"+marker,new Clock()))
+            {
+                Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));int pid=controller.ProcessId;
+                controller.Suspend();Assert.IsTrue(Wait(delegate { return Gone(pid)&&controller.ProcessId==0; }));
+                Assert.IsTrue(File.Exists(marker),"A normal shutdown must let the child receive its session-bound stop.");
+                Assert.AreEqual("session-stop",File.ReadAllText(marker));
+            }
+        }
         [TestCase("duplicate")][TestCase("one-frame")]
         public void StaleOrRepeatedFramesCannotKeepOldTemperatureAlive(string mode)
         {
@@ -136,19 +164,41 @@ namespace WinMemoryCleaner.Test
             { Gpu(controller);Assert.IsTrue(Wait(delegate { return controller.ProcessId>0; }));Assert.AreEqual(MetricStatus.WarmingUp,Gpu(controller).Status);clock.Advance(11);Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Error; })); }
         }
         [Test]
-        public void CancelDuringPreparationNeverStartsLateChildOrBlocksDispose()
+        public void CancelDuringPreparationReleasesLeaseAndNeverStartsLateChild()
         {
             using(var entered=new ManualResetEvent(false))using(var release=new ManualResetEvent(false))
             {
-                SensorPayload payload=Payload("normal");int completed=0;
-                var controller=new SensorBackendController(delegate { entered.Set();release.WaitOne();try { return payload.Prepare(); }finally { Interlocked.Increment(ref completed); } },delegate { return new SensorJob(); },new Clock().Now,Ready);
+                SensorPayload payload=Payload("normal");int completed=0;SensorPayloadLease prepared=null;
+                var controller=new SensorBackendController(delegate { entered.Set();release.WaitOne();try { prepared=payload.Prepare();return prepared; }finally { Interlocked.Increment(ref completed); } },delegate { return new SensorJob(); },new Clock().Now,Ready);
                 try
                 {
                     Gpu(controller);Assert.IsTrue(entered.WaitOne(2000));var watch=Stopwatch.StartNew();controller.Dispose();Assert.Less(watch.ElapsedMilliseconds,200);
                     release.Set();Assert.IsTrue(Wait(delegate { return completed==1&&controller.ProcessId==0; }));Assert.AreEqual(MetricStatus.Disabled,Gpu(controller).Status);
+                    Assert.IsTrue(Wait(delegate { return prepared!=null&&CanWrite(prepared.Executable); }),"Canceled preparation must release its owned verified lease.");
                 }
-                finally { release.Set();controller.Dispose(); }
+                finally { release.Set();controller.Dispose();if(prepared!=null)prepared.Dispose(); }
             }
+        }
+        [Test]
+        public void SuspendDuringPreparationReleasesLeaseAndDemandCanResume()
+        {
+            using(var entered=new ManualResetEvent(false))using(var release=new ManualResetEvent(false))
+            {
+                SensorPayload payload=Payload("normal");int completed=0;SensorPayloadLease prepared=null;
+                var controller=new SensorBackendController(delegate { if(Interlocked.Increment(ref completed)==1) { entered.Set();release.WaitOne();prepared=payload.Prepare();return prepared; }return payload.Prepare(); },delegate { return new SensorJob(); },new Clock().Now,Ready);
+                try
+                {
+                    Gpu(controller);Assert.IsTrue(entered.WaitOne(2000));controller.Suspend();Assert.AreEqual("Disabled",controller.BackendStatus);release.Set();
+                    Assert.IsTrue(Wait(delegate { return prepared!=null&&CanWrite(prepared.Executable); }),"Suspended preparation must release its lease before the next session.");
+                    Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }),"New demand must restart after canceled preparation.");
+                }
+                finally { release.Set();controller.Dispose();if(prepared!=null)prepared.Dispose(); }
+            }
+        }
+        private static bool CanWrite(string path)
+        {
+            try { using(var input=new FileStream(path,FileMode.Open,FileAccess.Write,FileShare.None))return input.CanWrite; }
+            catch(IOException) { return false; }
         }
         [Test]
         public void JobAssignmentFailureKillsOnlyNewlyOwnedChild()

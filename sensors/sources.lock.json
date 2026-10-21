@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "payload": "lhm-0.9.6-p1",
+  "archives": [
+    {
+      "name": "PawnIO-e1043d7750f501b6b0d3ac0a71bd5b9406cd17b6.tar.gz",
+      "repository": "https://github.com/namazso/PawnIO",
+      "commit": "e1043d7750f501b6b0d3ac0a71bd5b9406cd17b6",
+      "url": "https://codeload.github.com/namazso/PawnIO/tar.gz/e1043d7750f501b6b0d3ac0a71bd5b9406cd17b6",
+      "bytes": 45496,
+      "sha256": "c0356daa5418950e17cfd2c830d62b916d5c0a97bcca2e27622fadae4605fc75",
+      "purpose": "PawnIO 2.1.0 driver, user-mode library, tool and build scripts"
+    },
+    {
+      "name": "PawnPP-e64e4c37b2d8ba0d8ee57205faf8183aee12c438.tar.gz",
+      "repository": "https://github.com/namazso/PawnPP",
+      "commit": "e64e4c37b2d8ba0d8ee57205faf8183aee12c438",
+      "url": "https://codeload.github.com/namazso/PawnPP/tar.gz/e64e4c37b2d8ba0d8ee57205faf8183aee12c438",
+      "bytes": 29372,
+      "sha256": "a7a4c76ea1ca5a4291e805ef8490fc2cdd93ba69bc1e5f25ec50eb5a8f892962",
+      "purpose": "Separately archived PawnPP submodule required by the driver"
+    },
+    {
+      "name": "PawnIO.Modules-e12a858d952461ee2e919897cacbff7f905fe370.tar.gz",
+      "repository": "https://github.com/namazso/PawnIO.Modules",
+      "commit": "e12a858d952461ee2e919897cacbff7f905fe370",
+      "url": "https://codeload.github.com/namazso/PawnIO.Modules/tar.gz/e12a858d952461ee2e919897cacbff7f905fe370",
+      "bytes": 994808,
+      "sha256": "e82ef4c5c06461c74685fa60ebf28297e4830876f8bbf388187d7aa063bcf096",
+      "purpose": "Module 0.2.2 sources, includes, workflow and vendored Pawn compiler inputs"
+    }
+  ]
+}

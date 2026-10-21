@@ -71,6 +71,8 @@ namespace WinMemoryCleaner.Test
             {
                 if(_disposed)return;_disposed=true;
                 Model.Dispose();_cleaner.Dispose();_hotkey.Dispose();_notifications.Dispose();
+                if(MonitorCreations==0)Monitor.Dispose();
+                else Assert.IsTrue(Until(delegate { return Monitor.Disposals==1; },2000),"The model must release its transferred monitor exactly once");
                 if(Directory.Exists(_root))Directory.Delete(_root,true);
                 Settings.Reset(true);GC.SuppressFinalize(this);
             }

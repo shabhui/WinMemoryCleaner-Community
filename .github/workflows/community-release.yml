@@ -10,13 +10,15 @@ name: Community release build
 #   - WinMemoryCleaner.Community.exe.sha256     published checksum, verified before install
 #   - AssemblyInfo.txt                          announced version, read by the updater
 #   - WinMemoryCleaner.Community-<ver>.zip      archive for manual downloads
+#   - WinMemoryCleaner.Community-<ver>-sensor-sources.zip and .sha256
+#                                               fixed GPL/LGPL sources and PawnPP submodule
 # Publishing a GitHub Release is optional and only happens when release_tag is set.
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Publish a GitHub Release with this tag (empty = build artifacts only)'
+        description: 'Publish a GitHub Release from community with this tag (empty = build artifacts only)'
         required: false
         default: ''
         type: string
@@ -39,6 +41,14 @@ jobs:
       contents: write # only used by the optional release publish step
 
     steps:
+      - name: Validate release branch
+        if: ${{ inputs.release_tag != '' }}
+        shell: pwsh
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          if ($env:RELEASE_REF -ne 'refs/heads/community') { throw 'Publishing requires the community branch.' }
+
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -84,7 +94,7 @@ jobs:
 
           $exe = Join-Path $dist.FullName 'WinMemoryCleaner.Community.exe'
           $sidecar = "$exe.sha256"
-          $zip = Get-ChildItem dist -File -Filter '*.zip' | Select-Object -First 1
+          $zip = $null # resolved from the announced version below, not the first ZIP
 
           # The updater extracts the 64 hex digits from the published checksum and compares
           # them with the SHA-256 of the downloaded executable before it installs anything.
@@ -98,12 +108,21 @@ jobs:
 
           $parsed = $null
           if (-not [Version]::TryParse($announced, [ref]$parsed)) { throw "AssemblyInfo.txt does not announce a parsable version: $announced" }
+          $zipPath = Join-Path 'dist' ("WinMemoryCleaner.Community-$announced.zip")
+          $sourceZipPath = Join-Path 'dist' ("WinMemoryCleaner.Community-$announced-sensor-sources.zip")
+          if (-not (Test-Path -LiteralPath $zipPath) -or -not (Test-Path -LiteralPath $sourceZipPath)) { throw 'The portable archive or corresponding-source archive is missing.' }
+          $zip = Get-Item -LiteralPath $zipPath
+          $sourceHash = (Get-FileHash -LiteralPath $sourceZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $sourcePublished = ([regex]::Match((Get-Content -LiteralPath ($sourceZipPath + '.sha256') -Raw), '[0-9a-fA-F]{64}')).Value.ToLowerInvariant()
+          if ($sourceHash -ne $sourcePublished) { throw 'Corresponding-source checksum mismatch.' }
 
           $zipHash = (Get-FileHash $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Host "announced version: $announced"
           Write-Host "exe sha256       : $actual"
           Write-Host "archive          : $($zip.Name)"
           Write-Host "archive sha256   : $zipHash"
+          Write-Host "source archive   : $sourceZipPath"
+          Write-Host "source sha256    : $sourceHash"
 
           @(
             '### Community release artifacts',
@@ -111,8 +130,19 @@ jobs:
             "- announced version: ``$announced``",
             "- exe sha256: ``$actual``",
             "- archive: ``$($zip.Name)``",
-            "- archive sha256: ``$zipHash``"
+            "- archive sha256: ``$zipHash``",
+            "- corresponding source: ``$sourceZipPath``",
+            "- source sha256: ``$sourceHash``"
           ) | Out-File $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Upload both safety suites and embedded verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tests-${{ github.run_number }}
+          path: build/test-results/**
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
@@ -127,10 +157,13 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          $tag = '${{ inputs.release_tag }}'
+          $tag = $env:RELEASE_TAG
           $dist = (Get-ChildItem dist -Directory | Select-Object -First 1).FullName
-          $zip = (Get-ChildItem dist -File -Filter '*.zip' | Select-Object -First 1).FullName
+          $archiveBase = Join-Path (Split-Path -Parent $dist) (Split-Path -Leaf $dist)
+          $zip = $archiveBase + '.zip'
+          $sourceZip = $archiveBase + '-sensor-sources.zip'
 
           # The executable, its checksum and the announced version keep stable asset names, so
           # releases/latest/download/<name> always resolves to the newest release.
@@ -138,8 +171,21 @@ jobs:
             (Join-Path $dist 'WinMemoryCleaner.Community.exe'),
             (Join-Path $dist 'WinMemoryCleaner.Community.exe.sha256'),
             (Join-Path $dist 'AssemblyInfo.txt'),
-            $zip
+            $zip,
+            $sourceZip,
+            ($sourceZip + '.sha256'),
+            (Join-Path $dist 'SENSOR-THIRD-PARTY-NOTICES.md')
           )
+
+          # Refuse tag/asset replacement even if a prior run already created the tag.
+          $probe = & gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" --include 2>&1 | Out-String
+          $probeCode = $LASTEXITCODE
+          if ($probeCode -eq 0) { throw "Release tag already exists: $tag" }
+          if ($probe -notmatch '(?m)^HTTP/\S+\s+404\b') { throw 'Could not confirm that the release tag is unoccupied.' }
+          $infoVersion = ([regex]::Match((Get-Content 'src\Properties\AssemblyInfo.cs' -Raw), 'AssemblyInformationalVersion\("([0-9.]+-community\.[0-9]+)"\)')).Groups[1].Value
+          if (-not $infoVersion) { throw 'Missing source release version.' }
+          $expectedTag = 'v' + $infoVersion
+          if ($tag -ne $expectedTag) { throw "Requested tag $tag does not match this release version $expectedTag." }
 
           & gh release create $tag @assets --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "WinMemoryCleaner Community $tag (unofficial)" --generate-notes
           if ($LASTEXITCODE -ne 0) { exit 1 }

@@ -20,6 +20,7 @@ namespace WinMemoryCleaner
         private const int RetrySeconds = 30;
         private const int PollMilliseconds = 40;
         private const int StderrCapacity = 16384;
+        private const int StopWaitMilliseconds = 2000;
         private const int ExitWaitMilliseconds = 1000;
         private const int JoinMilliseconds = 500;
         private const string Source = "LibreHardwareMonitor";
@@ -221,7 +222,7 @@ namespace WinMemoryCleaner
                     long now = _clock();
                     if (_session == null && (_retryAt == 0 || now >= _retryAt))
                     {
-                        session = new Session(Guid.NewGuid().ToString("N"), _refresh, now);
+                        session = new Session(Guid.NewGuid().ToString("N"), _refresh);
                         _session = session;
                         _retryAt = 0;
                         ClearStderrLocked();
@@ -250,7 +251,7 @@ namespace WinMemoryCleaner
                 Supervise(session);
             }
             catch (Exception error) { if (!session.Abandoned) reason = Describe(error); }
-            Cleanup(session, reason);
+            finally { Cleanup(session, reason); }
         }
 
         private SensorDriverState InspectDriver()
@@ -286,7 +287,7 @@ namespace WinMemoryCleaner
             };
             Process process = Process.Start(start);
             if (process == null) throw new Win32Exception("The universal temperature backend did not start.");
-            session.Process = process;
+            lock (_gate) { session.Process = process; session.StartedTicks = _clock(); }
             session.ProcessId = process.Id;
             session.Input = process.StandardInput.BaseStream;
             session.Output = process.StandardOutput.BaseStream;
@@ -430,6 +431,19 @@ namespace WinMemoryCleaner
             lock (_gate) { session.ObservedRevision = revision; }
         }
 
+        private static void StopQuietly(Session session)
+        {
+            try
+            {
+                if (session.Input == null || session.Process.HasExited) return;
+                byte[] bytes = Utf8.GetBytes(SensorProtocol.Encode(new SensorMessage { Kind = "stop", Session = session.Id }) + "\n");
+                session.Input.Write(bytes, 0, bytes.Length);
+                session.Input.Flush();
+                session.Process.WaitForExit(StopWaitMilliseconds);
+            }
+            catch (Exception) { }
+        }
+
         private void Fault(Session session, string reason)
         {
             lock (_gate) { FaultLocked(session, reason); }
@@ -453,7 +467,7 @@ namespace WinMemoryCleaner
         private void EvaluateLocked()
         {
             Session session = _session;
-            if (session == null || session.Abandoned) return;
+            if (session == null || session.Abandoned || session.Process == null) return;
             long now = _clock();
             if (!session.Started)
             {
@@ -478,6 +492,7 @@ namespace WinMemoryCleaner
                 Process process = session.Process;
                 if (process != null)
                 {
+                    if (!faulted) StopQuietly(session);
                     try { if (!process.HasExited) process.Kill(); }
                     catch (InvalidOperationException) { }
                     catch (Win32Exception) { }
@@ -554,7 +569,7 @@ namespace WinMemoryCleaner
         private sealed class Session
         {
             internal readonly string Id;
-            internal readonly long StartedTicks;
+            internal long StartedTicks;
             internal readonly SensorFreshness Freshness = new SensorFreshness();
             internal int Refresh;
             internal int Revision;
@@ -573,7 +588,7 @@ namespace WinMemoryCleaner
             internal Stream Error;
             internal Thread OutputThread;
             internal Thread ErrorThread;
-            internal Session(string id, int refresh, long startedTicks) { Id = id; Refresh = refresh; StartedTicks = startedTicks; }
+            internal Session(string id, int refresh) { Id = id; Refresh = refresh; }
         }
     }
 }

@@ -266,6 +266,8 @@ namespace WinMemoryCleaner.Test
                 Assert.AreEqual("display-for-language-test", Settings.Monitoring.Screen);
                 Assert.AreEqual(123, Settings.Monitoring.X); Assert.AreEqual(456, Settings.Monitoring.Y);
                 Assert.AreEqual(1, ((ComboBox)window.FindName("OverlayLayoutChoice")).SelectedIndex);
+                Assert.AreEqual(window.Monitoring.Labels["Vertical"], ((ComboBox)window.FindName("OverlayLayoutChoice")).Text);
+                Assert.AreEqual(window.Monitoring.Labels["Custom"], ((ComboBox)window.FindName("OverlayCornerChoice")).Text);
             }
         }
 
@@ -403,13 +405,14 @@ namespace WinMemoryCleaner.Test
                 Assert.AreEqual(window.Monitoring.Labels["InstallSensorDriver"],button.Content);
                 Assert.AreEqual(window.Monitoring.TemperatureStatusText,status.Text);
                 Assert.IsTrue(button.IsEnabled);Assert.Greater(status.ActualWidth,80);
-                string prompt=null;var cancel=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(20) };
+                string prompt=null;double promptWidth=0;var cancel=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(20) };
                 cancel.Tick+=delegate
                 {
                     var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(w=>w is MessageDialog);
                     if(dialog==null)return;
                     cancel.Stop();Assert.AreSame(window,dialog.Owner);
                     prompt=(string)dialog.DataContext.GetType().GetProperty("Message").GetValue(dialog.DataContext,null);
+                    dialog.UpdateLayout();promptWidth=dialog.ActualWidth;
                     dialog.DialogResult=false;
                 };
                 cancel.Start();
@@ -419,6 +422,7 @@ namespace WinMemoryCleaner.Test
                 StringAssert.Contains("PawnIO 2.1.0",prompt);StringAssert.Contains("Secure Boot",prompt);
                 Assert.IsNull(typeof(MonitoringViewModel).GetField("_installer",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(window.Monitoring));
                 Assert.IsFalse(window.Monitoring.IsInstallingDriver);
+                Assert.LessOrEqual(promptWidth,Math.Min(600,SystemParameters.WorkArea.Width-32),"Driver confirmation must wrap into a readable width.");
             }
             window.Close();Drain();Assert.IsFalse(window.Monitoring.CanInstallDriver);
             Assert.IsFalse(window.Monitoring.BeginDriverInstallation(true));

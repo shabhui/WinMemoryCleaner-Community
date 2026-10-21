@@ -125,6 +125,9 @@ namespace WinMemoryCleaner.Test
         [Test]
         public void ArbitraryExeCannotBecomeOfficialInstaller()
         { string path=Path.Combine(_root,"not-installer.exe");File.WriteAllText(path,"not executable data");Assert.IsFalse(SensorDriverTrust.VerifyInstaller(path)); }
+        [TestCase((string)null)][TestCase("")][TestCase("C:\\bad:path.exe")]
+        public void UnsafeInstallerPathIsRejectedWithoutEscapingVerification(string path)
+        { Assert.IsFalse(SensorDriverTrust.VerifyInstaller(path)); }
     }
 }
 #pragma warning restore 1591

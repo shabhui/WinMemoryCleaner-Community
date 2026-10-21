@@ -40,7 +40,12 @@ internal static class SensorBackendChild
             while((line=Console.ReadLine())!=null)
             {
                 config=Json.DeserializeObject(line) as Dictionary<string,object>;
-                if((string)config["kind"]=="stop")return 0;
+                if((string)config["kind"]=="stop")
+                {
+                    if((string)config["session"]!=session)return 3;
+                    if(mode.StartsWith("stop-marker:",StringComparison.Ordinal))File.WriteAllText(mode.Substring(12),"session-stop");
+                    return 0;
+                }
                 Snapshot(output,config,sequence++,false);
             }
         }

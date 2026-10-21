@@ -63,6 +63,8 @@ namespace WinMemoryCleaner.Sensors
             catch (SecurityException) { return new SensorDriverState(false, true, null, "AccessDenied"); }
             catch (IOException) { return new SensorDriverState(false, true, null, "UnverifiedDriver"); }
             catch (ArgumentException) { return new SensorDriverState(false, true, null, "UnverifiedDriver"); }
+            catch (InvalidDataException) { return new SensorDriverState(false, true, null, "UnverifiedDriver"); }
+            catch (NotSupportedException) { return new SensorDriverState(false, true, null, "UnverifiedDriver"); }
             catch (CryptographicException) { return new SensorDriverState(false, true, null, "UnverifiedDriver"); }
         }
 
@@ -88,6 +90,8 @@ namespace WinMemoryCleaner.Sensors
             catch (UnauthorizedAccessException) { return false; }
             catch (SecurityException) { return false; }
             catch (ArgumentException) { return false; }
+            catch (InvalidDataException) { return false; }
+            catch (NotSupportedException) { return false; }
             catch (CryptographicException) { return false; }
         }
 

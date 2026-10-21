@@ -42,23 +42,22 @@ winget install IgorMundstein.WinMemoryCleaner
 
 ### 🛠️ Build from source (community)
 
-This community build stays on **.NET Framework 4.0 / WPF** and pins `<LangVersion>4</LangVersion>`, so a full Visual Studio install is not required for development:
+The **main WPF executable remains .NET Framework 4.0 / C# 4**. Its embedded sensor backend is **Windows x64 / .NET Framework 4.7.2 / C# 4**, with fixed LibreHardwareMonitorLib **0.9.6**. Restore the main project's NuGet packages before building:
 
 ```powershell
-# production binary only (no tests, no NUnit dependency)
-powershell -ExecutionPolicy Bypass -File .\build-community.ps1
+nuget restore .\src\packages.config -PackagesDirectory .\src\packages -NonInteractive
 
-# production + isolated test build + safe test suite (excludes Manual/Desktop) + dist packaging
-powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -Package
-```
+# Development only: the main project's in-box MSBuild does not run its analyzers.
+# The backend still REQUIRES Roslyn and the complete analyzer set; no C# 5 fallback.
+powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -SensorCompilerPath 'C:\path\to\Roslyn\csc.exe'
 
-**Released binaries are built by CI, not on a developer machine.** The in-box .NET Framework tools ship a C# 5 compiler, while CI and the [Community release build](/.github/workflows/community-release.yml) workflow use Visual Studio/Roslyn MSBuild and load the analyzers of `src\AllRules.ruleset`. Build the same way locally by passing that MSBuild:
-
-```powershell
+# Canonical local equivalent: Visual Studio MSBuild builds backend, payload and main EXE together.
 powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -Package -MSBuildPath 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
 ```
 
-`-Package` warns when it runs without `-MSBuildPath`, the script refuses to run when the pinned `LangVersion` was changed, and a locked output executable fails with the process id to stop. Test reports and packages stay inside the repository (`build\test-results`, `dist\`). NuGet packages are restored from `src\packages.config` into `src\packages`.
+**Released binaries come only from [Community release build](.github/workflows/community-release.yml).** Packaging without Visual Studio MSBuild, `-Tests`, a missing Roslyn compiler/analyzer, a changed language pin, or a missing payload fails explicitly. Both own-code projects use `AllRules.ruleset` and warnings-as-errors; the pinned third-party binaries are not claimed to satisfy our C# 4 source rules. The build restores hash-locked sensor inputs, compiles both safety suites, embeds 24 verified files, and compares the EXE's resources with the same build's inputs without executing them. The isolated NUnit runner uses CLR 4, labels and the unchanged 60-second per-test timeout; only the existing Manual/Desktop categories are excluded. It also builds and tests a separate hash-locked corresponding-source ZIP (driver/API/tool, PawnPP submodule, module sources/compiler inputs); the portable ZIP includes six complete license texts and provenance notices. The official installer wrapper source/signing credentials are not publicly available and are not offered by that bundle.
+
+Reports stay in `build\test-results`, generated inputs in `build\sensors`, and publishable packages in `dist`. Locked outputs fail rather than stopping a user process. No build, test or update installs a runtime or driver.
 
 ## 🚀 Features
 
@@ -85,7 +84,7 @@ powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -Package -
 | **Resource Monitoring** | Live CPU / GPU usage and a physical-memory gauge with the data source named for every readout; refresh interval selectable from 1 / 2 / 5 seconds. |
 | **Process Insights & Safe Actions** | Searchable, sortable process list (memory, normalized CPU, GPU usage, dedicated VRAM) with identity-verified working-set trim and guarded termination of the selected process. |
 | **Monitoring Overlay** | Compact always-on-top strip — horizontal by default, switchable to vertical — that is click-through, never steals focus, saves its position, and offers a "monitor only" mode that hides the whole main window. |
-| **Real CPU / GPU Temperatures** | Read-only temperatures from identified sources (ASUS System Control Interface CPU sensor, NVIDIA NVAPI, optional LibreHardwareMonitor); unavailable items show a reason instead of a fake 0 °C. |
+| **Real CPU / GPU Temperatures** | Automatic, identified readings from the embedded LibreHardwareMonitor 0.9.6 backend, with independent ASUS / NVIDIA NVAPI / LHM-OHM WMI fallbacks; absent or stale readings show a reason, never a fake 0 °C. |
 
 ### ↕️ Compact Mode
 
@@ -95,17 +94,19 @@ The Compact Mode feature allows you to collapse the main window into a minimal v
 
 ### 📊 Community Monitoring
 
-On top of the original cleaner, the community edition adds an on-demand monitoring layer — everything below is **read-only towards your hardware**: no driver is installed and no fan, power or performance-mode command is ever sent.
+On top of the original cleaner, the community edition adds an on-demand monitoring layer. **Our acquisition code only enables CPU/GPU and never calls fan, power, voltage, overclock or performance-mode controls.** It does not automatically install anything; an optional official PawnIO driver install is a separate, explicitly confirmed user action. Underlying vendor measurement APIs can use read/write-capable native handles and IOCTLs, so this is not a claim that every upstream access has read-only permission bits.
 
 - **Resource overview**: a physical-memory gauge plus paired CPU / GPU usage readouts, each labelled with its data source (Windows GetSystemTimes, Windows PDH).
 - **Process page**: enumerate every visible process (duplicate names keep separate PID rows), search by name or PID, sort by any metric; unavailable values sort last and never pretend to be zero.
 - **Safe process actions**: release the working set of a selected process, or end it after an explicit confirmation dialog. Identity checks and the operation itself use the same native process handle, so PID reuse cannot redirect an action; critical, protected and own processes are refused.
 - **Compact monitoring strip**: replaces the old fixed-width floating panel with three tight CPU / GPU / RAM groups — about 316×26 DIP horizontal, 118×78 DIP vertical with all items enabled. It stays topmost, is mouse-through by default, never takes focus, supports drag positioning and per-monitor corner placement, and both the layout (horizontal / vertical) and position persist.
 - **Monitor-only mode**: one click enables the strip and hides the main window; the tray icon reopens settings. Nothing else about your close-button preference changes, and sampling continues while the window is hidden.
-- **Honest temperatures**: CPU temperature is read through the already-installed ASUS System Control Interface driver (sensor `0x00120094`), with LibreHardwareMonitor as the fallback; GPU temperature prefers NVIDIA NVAPI. ACPI thermal-zone values are never labelled CPU temperature, and a missing source shows "unavailable" with the reason — never a fabricated 0 °C.
-- **On-demand sampling**: with the overlay off and the window hidden, CPU/GPU, temperature and per-process sampling stop; only the tray memory display and the auto-optimization check keep running at a low cadence.
+- **Honest, automatic temperatures**: the embedded x64/net472 backend probes supported Intel/AMD CPUs and NVIDIA/AMD/Intel GPUs; a separate LibreHardwareMonitor application is not needed for this path. CPU requires the pinned official standard PawnIO 2.1.0 image, valid Windows trust and a ready device, checked in both processes. Unknown/shared, newer, unsigned or unrestricted drivers are not overwritten or treated as absent. Fixed LHM 0.9.6 couples Intel GPU enumeration to that same CPU/driver gate; NVIDIA/AMD GPU probing stays independent. This is broad detection, **not an all-hardware guarantee**.
+- **Independent fallbacks**: each missing CPU/GPU reading can use the existing ASUS CPU sensor (`0x00120094`) / NVIDIA NVAPI, then an already-running default-named LibreHardwareMonitor or OpenHardwareMonitor WMI provider. Details retain the actual device/sensor/provider and the universal failure reason. CPU candidates follow explicit package/Tdie/combined/average/CCD/core rules; GPU uses core temperature only. Hotspot, VRAM, ACPI zones, distance-to-threshold and invalid/non-finite/out-of-range values never become a fake core temperature.
+- **Explicit driver consent**: the settings status line explains component/driver readiness. Clicking **Install universal temperature driver** opens a confirmation before the unmodified, signature-checked official installer can start. Cancellation performs no install. Security-policy blocks, failure or reboot requirements are reported without changing Secure Boot/HVCI or rebooting Windows; an existing shared driver is never replaced or uninstalled by the cleaner.
+- **On-demand sampling and cost**: with temperatures demanded there is at most one owned backend, prepared from the EXE into `%LOCALAPPDATA%\WinMemoryCleaner.Community\Sensors`. A clean EXE-only update can prepare its own versioned payload; no companion DLLs are required next to the download. This adds compressed EXE size, disk cache and a separate process/private-memory cost. Switching off demand invalidates cached readings immediately and stops the owned child asynchronously; with the overlay off and shell hidden, CPU/GPU, temperature and per-process sampling stop. Only the tray memory display and the auto-optimization check keep their low cadence. Missing .NET 4.7.2/x64 support fails honestly with fallbacks, without installing a runtime.
 
-Current verification (2026-10-17): full safe test suite 430/430 and backend suite 49/49 with zero errors, 529 real-window interaction checks on the final Release binary, and a single 30 s warm-up + 60 s measurement of the temperature-enabled strip (≈68 MiB private, ≈0.034% own CPU, UI dispatch p95 ≈0.53 ms). See the [Chinese user guide](docs/monitoring-guide.zh-CN.md), the [verification report](docs/compact-monitoring-report.zh-CN.md) and the [implementation ledger](docs/monitoring-progress.md); raw logs and screenshots are produced locally under `build\monitoring-verification\` by `tools\build-monitoring.ps1` and `tools\verify-monitoring.ps1` (that folder is git-ignored).
+New-version evidence is tracked in the [universal temperature verification report](docs/universal-temperature-report.zh-CN.md): local complete-analyzer builds, main safety **551/551**, isolated backend safety **35/35**, actual embedded preparation **2/2**, and the real-window regression **14/14** have passed. One independent review found no Critical/Important defect; the verified minor lifecycle, cleanup, path and release-guard issues are fixed. The latest isolated production-window run before those review fixes records **75 passed / 0 failed / 1 unavailable**: real RTX 4080 core temperatures and ASUS CPU fallback are distinguished from the unavailable trusted-driver universal CPU path. An independent audit of 780 local measurement samples found combined CPU medians around **0.096%**, dispatcher p95 below **0.85 ms**, and ten-minute private-memory growth **5.266 MiB**; the report pins that development binary and keeps final canonical CI/publication verification separate. The [Chinese guide](docs/monitoring-guide.zh-CN.md) explains driver and compatibility limits. The [2026-10-17 compact report](docs/compact-monitoring-report.zh-CN.md) and [historical ledger](docs/monitoring-progress.md) describe **v3.0.8.3-era evidence only**, not this backend's performance or universal CPU verification.
 
 ### 🔔 System Tray (Notification Area)
 
@@ -175,7 +176,7 @@ We understand that users are rightfully skeptical of system utilities. This proj
 
 ### 🔑 Automated & Secure Builds (CI/CD)
 
-Every community release is built and published by **GitHub Actions**, with no manual build step: [Community CI](/.github/workflows/community-ci.yml) compiles both configurations and runs the full safe test suite on every push, and the [Community release build](/.github/workflows/community-release.yml) workflow produces the publishable artifacts (executable, `.sha256`, `AssemblyInfo.txt`, archive) with the same Visual Studio/Roslyn toolchain and verifies the published checksum against the built executable before anything is uploaded. The upstream signing, release, and package-manager workflows are preserved but disabled in [`.github/workflows-disabled/`](/.github/workflows-disabled).
+Every community release is built and published by **GitHub Actions**, with no manual binary upload: [Community CI](.github/workflows/community-ci.yml) builds production and isolated-test main executables plus the same-build backend, runs both safety suites, and verifies the embedded payload on code pushes. [Community release build](.github/workflows/community-release.yml) does the same with Visual Studio/Roslyn MSBuild, then packages the EXE, `.sha256`, `AssemblyInfo.txt`, archive, third-party notices and corresponding-source bundle. Checksum, version and payload checks run before publication; an existing tag/asset is never replaced. The upstream signing, release, and package-manager workflows remain preserved but disabled in [`.github/workflows-disabled/`](.github/workflows-disabled).
 
 ### 🔁 Download Verification (Self-Update)
 

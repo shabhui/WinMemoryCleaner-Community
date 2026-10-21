@@ -62,8 +62,6 @@ namespace WinMemoryCleaner
         public ListCollectionView ProcessesView { get; private set; }
         public IList<DisplayChoice> Displays { get; private set; }
         public IList<int> RefreshChoices { get { return new List<int>{1,2,5}; } }
-        public IList<string> Corners { get { return new List<string>{Labels["TopLeft"],Labels["TopRight"],Labels["BottomLeft"],Labels["BottomRight"],Labels["Custom"]}; } }
-        public IList<string> OverlayLayouts { get { return new List<string>{Labels["Horizontal"],Labels["Vertical"]}; } }
         public int OverlayLayout
         {
             get { return _options.Layout; }
@@ -285,10 +283,10 @@ namespace WinMemoryCleaner
         }
         private void OnLanguageChanged(object sender,PropertyChangedEventArgs e)
         {
-            if(_disposed)return;
+            if(_disposed||e.PropertyName==null||e.PropertyName.Length!=0)return; // Refresh once after the full language switch, not its intermediate Culture event.
             if(!_dispatcher.CheckAccess()) { _dispatcher.BeginInvoke(new Action(delegate { OnLanguageChanged(sender,e); })); return; }
-            Labels.Refresh(); RaisePropertyChanged("Corners"); RaisePropertyChanged("OverlayLayouts");
-            RaisePropertyChanged("OverlayCorner"); RaisePropertyChanged("OverlayLayout"); RaisePropertyChanged("ProcessCountText");
+            Labels.Refresh();
+            RaisePropertyChanged("ProcessCountText");
             foreach(string name in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail"})RaisePropertyChanged(name);
             RaiseSensorStatus();
         }

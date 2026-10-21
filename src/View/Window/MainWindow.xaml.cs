@@ -90,7 +90,7 @@ namespace WinMemoryCleaner
         private void OnInstallTemperatureDriver(object sender,RoutedEventArgs e)
         {
             if(_closed||!Monitoring.CanInstallDriver)return;
-            var dialog=new MessageDialog(this,Monitoring.Labels["ConfirmSensorDriver"],Enums.Dialog.Button.No,Enums.Dialog.Button.Yes) { Title=Monitoring.Labels["ConfirmSensorDriverTitle"] };
+            var dialog=new MessageDialog(this,Monitoring.Labels["ConfirmSensorDriver"],Enums.Dialog.Button.No,Enums.Dialog.Button.Yes) { Title=Monitoring.Labels["ConfirmSensorDriverTitle"],MaxWidth=Math.Min(600,SystemParameters.WorkArea.Width-32) };
             Monitoring.BeginDriverInstallation(dialog.ShowDialog()==true);
         }
         private void OnProcessSorting(object sender, DataGridSortingEventArgs e)
