@@ -72,6 +72,12 @@ namespace WinMemoryCleaner.Test
         private static MetricValue Gpu(SensorBackendController controller)
         { MetricValue cpu,gpu;controller.GetSnapshot(out cpu,out gpu);return gpu; }
         private static bool Wait(Func<bool> condition) { return SpinWait.SpinUntil(condition,5000); }
+        private static void AssertAvailable(SensorBackendController controller)
+        {
+            bool available=Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; });
+            MetricValue gpu=Gpu(controller);
+            Assert.IsTrue(available,String.Format(CultureInfo.InvariantCulture,"Backend={0}; GPU={1}; Detail={2}; PID={3}; stderr={4}",controller.BackendStatus,gpu.Status,gpu.Detail,controller.ProcessId,controller.Diagnostic));
+        }
         private static bool Gone(int pid)
         { if(pid==0)return true;try { using(Process process=Process.GetProcessById(pid))return process.HasExited; }catch(ArgumentException) { return true; } }
         [Test]
@@ -83,7 +89,7 @@ namespace WinMemoryCleaner.Test
             using(var controller=Controller("normal",new Clock()))
             {
                 var watch=Stopwatch.StartNew();Assert.AreEqual(MetricStatus.WarmingUp,Gpu(controller).Status);Assert.Less(watch.ElapsedMilliseconds,200);
-                Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));int pid=controller.ProcessId;Assert.Greater(pid,0);Assert.AreEqual(42,Gpu(controller).Value);
+                AssertAvailable(controller);int pid=controller.ProcessId;Assert.Greater(pid,0);Assert.AreEqual(42,Gpu(controller).Value);
                 controller.Configure(5);Assert.IsTrue(Wait(delegate { return Gpu(controller).Value==45; }));Assert.AreEqual(pid,controller.ProcessId);
                 controller.Configure(1);Assert.IsTrue(Wait(delegate { return Gpu(controller).Value==41; }));Assert.AreEqual(pid,controller.ProcessId);
                 watch.Restart();controller.Suspend();Assert.Less(watch.ElapsedMilliseconds,200);Assert.AreEqual("Disabled",controller.BackendStatus);
@@ -102,8 +108,8 @@ namespace WinMemoryCleaner.Test
         {
             using(var controller=Controller("stderr",new Clock()))
             {
-                Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));
-                Assert.IsTrue(Wait(delegate { return controller.Diagnostic.EndsWith("END",StringComparison.Ordinal); }));
+                AssertAvailable(controller);
+                Assert.IsTrue(Wait(delegate { return controller.Diagnostic.EndsWith("END",StringComparison.Ordinal); }),controller.Diagnostic);
                 Assert.AreEqual(16384,Encoding.UTF8.GetByteCount(controller.Diagnostic));Assert.AreEqual(42,Gpu(controller).Value);
             }
         }
@@ -131,7 +137,7 @@ namespace WinMemoryCleaner.Test
                 {
                     Gpu(controller);Assert.IsTrue(entered.WaitOne(2000));clock.Advance(20);
                     Assert.AreEqual(MetricStatus.WarmingUp,Gpu(controller).Status,"The handshake budget starts only after the child starts.");
-                    release.Set();Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));
+                    release.Set();AssertAvailable(controller);
                 }
                 finally { release.Set();controller.Dispose(); }
             }
@@ -142,7 +148,7 @@ namespace WinMemoryCleaner.Test
             string marker=Path.Combine(_root,Guid.NewGuid().ToString("N")+".stopped");
             using(var controller=Controller("stop-marker:"+marker,new Clock()))
             {
-                Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));int pid=controller.ProcessId;
+                AssertAvailable(controller);int pid=controller.ProcessId;
                 controller.Suspend();Assert.IsTrue(Wait(delegate { return Gone(pid)&&controller.ProcessId==0; }));
                 Assert.IsTrue(File.Exists(marker),"A normal shutdown must let the child receive its session-bound stop.");
                 Assert.AreEqual("session-stop",File.ReadAllText(marker));
@@ -153,7 +159,7 @@ namespace WinMemoryCleaner.Test
         {
             var clock=new Clock();using(var controller=Controller(mode,clock))
             {
-                Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));clock.Advance(11);
+                AssertAvailable(controller);clock.Advance(11);
                 Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Error; }));Assert.IsNull(Gpu(controller).Value);
             }
         }
@@ -190,7 +196,7 @@ namespace WinMemoryCleaner.Test
                 {
                     Gpu(controller);Assert.IsTrue(entered.WaitOne(2000));controller.Suspend();Assert.AreEqual("Disabled",controller.BackendStatus);release.Set();
                     Assert.IsTrue(Wait(delegate { return prepared!=null&&CanWrite(prepared.Executable); }),"Suspended preparation must release its lease before the next session.");
-                    Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }),"New demand must restart after canceled preparation.");
+                    AssertAvailable(controller);
                 }
                 finally { release.Set();controller.Dispose();if(prepared!=null)prepared.Dispose(); }
             }
@@ -212,7 +218,7 @@ namespace WinMemoryCleaner.Test
         {
             using(var controller=Controller("normal",new Clock()))
             {
-                Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));int old=controller.ProcessId;
+                AssertAvailable(controller);int old=controller.ProcessId;
                 controller.ResetDriverState();Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available&&controller.ProcessId!=old; }));Assert.IsTrue(Gone(old));
             }
         }
@@ -221,7 +227,7 @@ namespace WinMemoryCleaner.Test
         {
             using(var controller=Controller("normal",new Clock()))
             {
-                Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));int pid=controller.ProcessId;
+                AssertAvailable(controller);int pid=controller.ProcessId;
                 controller.Suspend();controller.ResetDriverState();Assert.AreEqual("Disabled",controller.BackendStatus);
                 Assert.IsTrue(Wait(delegate { return Gone(pid)&&controller.ProcessId==0; }));
                 Thread.Sleep(150);Assert.AreEqual(0,controller.ProcessId);Assert.AreEqual("Disabled",controller.BackendStatus);
@@ -232,7 +238,7 @@ namespace WinMemoryCleaner.Test
         {
             var controller=Controller("one-frame",new Clock());int pid=0;
             try
-            { Assert.IsTrue(Wait(delegate { return Gpu(controller).Status==MetricStatus.Available; }));pid=controller.ProcessId;var watch=Stopwatch.StartNew();controller.Dispose();Assert.Less(watch.ElapsedMilliseconds,200);Assert.IsTrue(Wait(delegate { return Gone(pid)&&controller.ProcessId==0; }));Assert.AreEqual(MetricStatus.Disabled,Gpu(controller).Status); }
+            { AssertAvailable(controller);pid=controller.ProcessId;var watch=Stopwatch.StartNew();controller.Dispose();Assert.Less(watch.ElapsedMilliseconds,200);Assert.IsTrue(Wait(delegate { return Gone(pid)&&controller.ProcessId==0; }));Assert.AreEqual(MetricStatus.Disabled,Gpu(controller).Status); }
             finally { controller.Dispose(); }
         }
         private sealed class Clock
