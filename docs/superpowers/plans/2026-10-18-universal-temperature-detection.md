@@ -151,9 +151,9 @@ $body=$body.Replace('$PSScriptRoot',"$repo\tools")
 - [x] **Step 2: Run local functional/fault checks**：最终界面修复后的生产实窗75通过/0失败/1通用CPU不可验证（含4项清理）；真实GPU与ASUS备用分别记录，1/2/5秒连续帧、取消/暂停/恢复/退出、自有后端挂起/退出和UI响应已验。14/14窗口回归通过；准备取消两项实际行为RED后finally清理修复，完整复测545/545。
 - [x] **Step 3: Run performance evidence**：2秒模式3×30秒预热/60秒测量及30/600秒留存均通过，独立重算780个测量样本。三短轮合计全机CPU中位0.095994/0.096521/0.096461%，UIp95最高0.8464ms，留存增长5.266MiB；主/后端及合计分别记录。测量本地EXE哈希0a45…690b4，非最终canonical产物；未授权CPU驱动和无AMD/IntelGPU实物明确未验。
 - [x] **Step 4: Update docs/version**：远端预定tag未占用，AssemblyVersion/FileVersion=3.0.8.4且Info=3.0.8.4-community.4；README/CHANGELOG/指南/验收报告写明成本、运行时、驱动确认和硬件边界，性能数据固定本地构建哈希且不冒充最终发布资产。
-- [ ] **Step 5: Push and run canonical workflows**：普通非强推；网络失败逐blob/tree核对后Git Data API force=false；先无发布的canonical构建排除分析器错误，修具体错误后复验；全部绿色再发布未占用tag。
-- [ ] **Step 6: Verify final release**：下载最终EXE到无旁置文件干净目录，校验版本/sidecar/latest/内嵌载荷和实际准备；不启动受保护身份冲突的生产实例；隔离验证不得修改真实设置。
-- [ ] **Step 7: Verify cleanup**：用户EXE hash、当前用户进程、HKLM32/64及原任务复核，无测试/采集孤儿；原PID23072在系统重启后已不存在，任务仅已记录注册时间变化，不伪称原实例存活/任务完全相同；区分已验、模拟与未授权证据并最终汇报。
+- [x] **Step 5: Push and run canonical workflows**：本地提交经普通合并保留两套历史；Git 推送超时后按逐 blob/tree/commit 核对使用 Git Data API `force=false` 更新，远端与本地跟踪一致。canonical 显式失败逐一诊断：VS18 MSBuild 识别（`31482e8`）、受控子进程启动诊断（`4c23276`）、stdin UTF-8 BOM 兼容（`9e4876d`）。同提交 CI `39567029870`、无发布产物门禁 `39567068285` 与正式发布 `39567637435` 全部 `success`；正式运行记录主 554/554、后端 36/36、源码 2/2，并发布未占用标签 `v3.0.8.4-community.4`。
+- [x] **Step 6: Verify final release**：七项资产完整下载并逐项核对 GitHub 大小/`sha256:` 摘要、sidecar、便携包 18 文件/17 校验/6 许可、源码包 3 档案/10 条目；`latest` 与标签引用均指向 `9e4876d`，通过 `releases/latest/download` 实取 EXE/校验/公告字节与发布资产一致。最终 EXE 反射提取与正式 `packaged-payload.json` 逐文件一致（manifest `053a5e9b…`、24/25/14/9），并由 detached canonical 源码工作树验证器 exit 0 复核。随后以发布 EXE 隔离运行功能回归：76 项 → 75 通过/0 失败/1 通用 CPU 不可验证，退出 0，UI 调度 p95 0.5012 ms，自有子进程 0 残留、注册表覆盖与 scratch 载荷移除、安装器未执行、未使用真实用户缓存。
+- [x] **Step 7: Verify cleanup**：用户 EXE SHA `E13B…B4114` 与基线一致未被覆盖；HKLM 32/64 设置、共享 PawnIO 注册项与驱动字节一致；原任务仅登记时间差异，其余字段一致且未改写。会话 scratch 与系统中均无自有测试或采集孤儿进程；原 PID 23072 在系统重启后不复存在，仅编号被复用，不伪称原实例存活。证据分层记录：本地开发构建（性能 780 样本、`final-functional-3`）、canonical 发布产物（554/36、七项资产、最终载荷）、发布版隔离运行（75/0/1）与未授权/未验证硬件（受信驱动通用 CPU、AMD CPU/GPU、Intel GPU）互不替代。
 
 ## Self-review (2026-10-18)
 
