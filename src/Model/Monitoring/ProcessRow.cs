@@ -48,31 +48,46 @@ namespace WinMemoryCleaner
     public sealed class ProcessTable
     {
         private readonly Dictionary<int, ProcessRow> _byId = new Dictionary<int, ProcessRow>();
-        public ObservableCollection<ProcessRow> Rows { get; private set; }
-        public ProcessTable() { Rows = new ObservableCollection<ProcessRow>(); }
-        public void Reconcile(IList<ProcessSnapshot> snapshots)
+        private readonly ProcessRowCollection _rows=new ProcessRowCollection();
+        public ObservableCollection<ProcessRow> Rows { get { return _rows; } }
+        public void Reconcile(IList<ProcessSnapshot> snapshots) { ReconcileBatch(snapshots); }
+        internal ProcessRow Find(int id)
+        { ProcessRow row;return _byId.TryGetValue(id,out row)?row:null; }
+        internal ProcessTableChange ReconcileBatch(IList<ProcessSnapshot> snapshots)
         {
-            var seen = new HashSet<int>();
-            if (snapshots != null)
+            var seen=new HashSet<int>();var changes=ProcessTableChange.None;
+            _rows.BeginUpdate();
+            try
             {
-                foreach (var snapshot in snapshots)
+                if(snapshots!=null)
                 {
-                    if (snapshot == null || !seen.Add(snapshot.Id)) continue;
-                    ProcessRow row;
-                    if (_byId.TryGetValue(snapshot.Id, out row))
+                    foreach(var snapshot in snapshots)
                     {
-                        if (row.Snapshot.CreationTime == snapshot.CreationTime) { row.Apply(snapshot); continue; }
-                        Rows.Remove(row); _byId.Remove(snapshot.Id);
+                        if(snapshot==null||!seen.Add(snapshot.Id))continue;
+                        var row=Find(snapshot.Id);
+                        if(row!=null)
+                        {
+                            if(row.Snapshot.CreationTime==snapshot.CreationTime)
+                            {
+                                changes|=ProcessTableChanges.Between(row.Snapshot,snapshot);
+                                row.Apply(snapshot);continue;
+                            }
+                            _rows.Remove(row);_byId.Remove(snapshot.Id);
+                        }
+                        row=new ProcessRow(snapshot);_byId.Add(snapshot.Id,row);_rows.Add(row);
+                        changes|=ProcessTableChange.Membership;
                     }
-                    row = new ProcessRow(snapshot); _byId.Add(snapshot.Id, row); Rows.Add(row);
+                }
+                for(int i=_rows.Count-1;i>=0;i--)
+                {
+                    if(!seen.Contains(_rows[i].Id))
+                    { _byId.Remove(_rows[i].Id);_rows.RemoveAt(i);changes|=ProcessTableChange.Membership; }
                 }
             }
-            for (int i = Rows.Count - 1; i >= 0; i--)
-            {
-                if (!seen.Contains(Rows[i].Id)) { _byId.Remove(Rows[i].Id); Rows.RemoveAt(i); }
-            }
+            finally { _rows.EndUpdate(); }
+            return changes;
         }
-        public void Clear() { Rows.Clear(); _byId.Clear(); }
+        public void Clear() { _byId.Clear();if(_rows.Count!=0)_rows.Clear(); }
     }
 
     public sealed class ProcessRowComparer : IComparer
