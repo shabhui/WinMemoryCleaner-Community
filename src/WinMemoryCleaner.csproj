@@ -201,6 +201,7 @@
     <Compile Include="Interfaces\ITemperatureConfiguration.cs" />
     <Compile Include="Interop\MonitoringNativeMethods.cs" />
     <Compile Include="ViewModel\MonitoringViewModel.cs" />
+    <Compile Include="ViewModel\ProcessListPresentation.cs" />
     <Compile Include="View\Control\SettingsPanel.xaml.cs"><DependentUpon>SettingsPanel.xaml</DependentUpon></Compile>
     <Compile Include="View\Window\MonitoringOverlay.xaml.cs"><DependentUpon>MonitoringOverlay.xaml</DependentUpon></Compile>
     <Page Include="View\Control\SettingsPanel.xaml"><Generator>MSBuild:Compile</Generator><SubType>Designer</SubType></Page>

@@ -27,17 +27,14 @@ namespace WinMemoryCleaner
         private readonly Func<Action,SensorDriverInstaller> _createInstaller;
         private SensorDriverInstaller _installer;
         private DispatcherTimer _installTimer;
-        private readonly ProcessTable _table = new ProcessTable();
+        private readonly ProcessListPresentation _processes;
         private MonitoringOptions _options;
         private ResourceSnapshot _last;
         private bool _mainVisible, _processPage;
         private volatile bool _disposed;
         private int _pending;
         private int _sampleCount, _processSampleCount, _temperatureSampleCount;
-        private string _query=string.Empty, _failure, _actionStatus=string.Empty;
-        private string _sortField="WorkingSetBytes";
-        private bool _descending=true;
-        private ProcessRow _selected;
+        private string _failure, _actionStatus=string.Empty;
 
         public MonitoringViewModel(MainViewModel cleaner, Dispatcher dispatcher)
             : this(cleaner,dispatcher,delegate { return new ResourceMonitor(); }) { }
@@ -51,15 +48,14 @@ namespace WinMemoryCleaner
             _cleaner=cleaner; _dispatcher=dispatcher; _options=Settings.Monitoring;
             _createInstaller=createInstaller;_session=new MonitoringSession(createMonitor);
             _options.Normalize(); Labels=new MonitorText();
-            ProcessesView=new ListCollectionView(_table.Rows);
-            ProcessesView.Filter=delegate(object row) { var item=(ProcessRow)row; return MonitoringPolicy.MatchesProcess(item.Name,item.Id,_query); };
-            ProcessesView.CustomSort=new ProcessRowComparer(_sortField,_descending);
+            _processes=new ProcessListPresentation(dispatcher,Labels);
+            _processes.PropertyChanged+=OnProcessPresentationChanged;
             _pump=new MonitoringPump(Sample, Suspend);
             Localizer.StaticPropertyChanged+=OnLanguageChanged;
             RefreshDisplays();
         }
         public MonitorText Labels { get; private set; }
-        public ListCollectionView ProcessesView { get; private set; }
+        public ListCollectionView ProcessesView { get { return _processes.View; } }
         public IList<DisplayChoice> Displays { get; private set; }
         public IList<int> RefreshChoices { get { return new List<int>{1,2,5}; } }
         public int OverlayLayout
@@ -88,10 +84,28 @@ namespace WinMemoryCleaner
         public bool ShowGpuTemperature { get { return Item(16); } set { SetItem(16,value,"ShowGpuTemperature"); } }
         public bool ShowCpuGroup { get { return ShowCpu||ShowCpuTemperature; } }
         public bool ShowGpuGroup { get { return ShowGpu||ShowGpuTemperature; } }
-        public string SearchQuery { get { return _query; } set { _query=value??string.Empty; ProcessesView.Refresh(); RaisePropertyChanged("SearchQuery"); } }
-        public ProcessRow SelectedProcess { get { return _selected; } set { _selected=value; RaisePropertyChanged("SelectedProcess"); } }
-        public int ProcessCount { get { return _table.Rows.Count; } }
-        public string ProcessCountText { get { return string.Format(Localizer.Culture,Labels["ProcessCount"],ProcessCount); } }
+        public string SearchQuery { get { return _processes.SearchQuery; } set { _processes.SearchQuery=value; } }
+        public ProcessRow SelectedProcess { get { return _processes.SelectedProcess; } set { _processes.SelectedProcess=value; } }
+        public int ProcessCount { get { return _processes.TotalCount; } }
+        public string ProcessCountText { get { return _processes.CountText; } }
+        public bool CanClearSearch { get { return _processes.CanClearSearch; } }
+        public bool CanActOnSelectedProcess { get { return _processes.CanActOnSelectedProcess; } }
+        public string ProcessStatusText { get { return _processes.StatusText; } }
+        public string ProcessStatusDetail { get { return _processes.StatusDetail; } }
+        public bool HasProcessStatus { get { return _processes.HasStatus; } }
+        public void ClearSearch() { _processes.ClearSearch(); }
+        internal bool IsCurrentProcessTarget(ProcessSnapshot target) { return _processes.IsCurrentTarget(target); }
+        private void OnProcessPresentationChanged(object sender,PropertyChangedEventArgs e)
+        {
+            string property=e.PropertyName;
+            if(property=="TotalCount")property="ProcessCount";
+            else if(property=="CountText")property="ProcessCountText";
+            else if(property=="StatusText")property="ProcessStatusText";
+            else if(property=="StatusDetail")property="ProcessStatusDetail";
+            else if(property=="HasStatus")property="HasProcessStatus";
+            else if(property=="MatchedCount")return;
+            RaisePropertyChanged(property);
+        }
         public int SampleCount { get { return _sampleCount; } }
         public int ProcessSampleCount { get { return _processSampleCount; } }
         public int TemperatureSampleCount { get { return _temperatureSampleCount; } }
@@ -177,11 +191,11 @@ namespace WinMemoryCleaner
         }
         public void SetViewState(bool visible,bool processes)
         {
-            if(_mainVisible==visible&&_processPage==processes)return;
+            if(_disposed||(_mainVisible==visible&&_processPage==processes))return;
             _mainVisible=visible; _processPage=processes;
+            _processes.SetActive(visible&&processes);
             if(!visible||!processes)
             {
-                _table.Clear(); SelectedProcess=null; RaisePropertyChanged("ProcessCount"); RaisePropertyChanged("ProcessCountText");
                 if(_last!=null) _last.Processes.Clear();
             }
             UpdateDemand();
@@ -201,12 +215,7 @@ namespace WinMemoryCleaner
             _pump.SetDemand(demand,RefreshSeconds);
         }
         public void RefreshNow() { UpdateDemand(); }
-        public ListSortDirection Sort(string field)
-        {
-            _descending=_sortField==field?!_descending:field!="Name"&&field!="Id";
-            _sortField=field; ProcessesView.CustomSort=new ProcessRowComparer(field,_descending);
-            return _descending?ListSortDirection.Descending:ListSortDirection.Ascending;
-        }
+        public ListSortDirection Sort(string field) { return _processes.Sort(field); }
         public void RefreshDisplays()
         {
             var list=new List<DisplayChoice>();
@@ -245,14 +254,9 @@ namespace WinMemoryCleaner
                     {
                         if(_disposed||!_pump.IsCurrent(generation))return;
                         _last=snapshot; _failure=failure;
-                        if(demand.Processes&&snapshot!=null)
-                        {
-                            var old=_selected;
-                            _table.Reconcile(snapshot.Processes); ProcessesView.Refresh();
-                            if(old!=null&&!_table.Rows.Contains(old)) SelectedProcess=null;
-                        }
+                        if(demand.Processes)_processes.Apply(snapshot,failure);
                         if(snapshot!=null)snapshot.Processes.Clear();
-                        foreach(string property in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","OverlayCpuText","OverlayGpuText","OverlayCpuTemperatureText","OverlayGpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail","GpuName","MemoryText","ProcessCount","ProcessCountText"}) RaisePropertyChanged(property);
+                        foreach(string property in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","OverlayCpuText","OverlayGpuText","OverlayCpuTemperatureText","OverlayGpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail","GpuName","MemoryText"}) RaisePropertyChanged(property);
                         RaiseSensorStatus();
                     }
                     finally { Interlocked.Exchange(ref _pending,0); }
@@ -286,7 +290,7 @@ namespace WinMemoryCleaner
             if(_disposed||e.PropertyName==null||e.PropertyName.Length!=0)return; // Refresh once after the full language switch, not its intermediate Culture event.
             if(!_dispatcher.CheckAccess()) { _dispatcher.BeginInvoke(new Action(delegate { OnLanguageChanged(sender,e); })); return; }
             Labels.Refresh();
-            RaisePropertyChanged("ProcessCountText");
+            _processes.RefreshText();
             foreach(string name in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail"})RaisePropertyChanged(name);
             RaiseSensorStatus();
         }
@@ -295,7 +299,8 @@ namespace WinMemoryCleaner
             if(_disposed)return;
             _disposed=true; Localizer.StaticPropertyChanged-=OnLanguageChanged;
             if(_installTimer!=null) { _installTimer.Stop();_installTimer.Tick-=OnInstallationProgress; }
-            _session.Dispose();_pump.Dispose(); _table.Clear(); _last=null; _selected=null;
+            _processes.PropertyChanged-=OnProcessPresentationChanged;_processes.Dispose();
+            _session.Dispose();_pump.Dispose(); _last=null;
         }
     }
 }
