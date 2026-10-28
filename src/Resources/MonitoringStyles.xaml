@@ -16,7 +16,12 @@
         </ControlTemplate></Setter.Value></Setter>
     </Style>
     <Style x:Key="ProcessActionButton" TargetType="Button" BasedOn="{StaticResource MonitorButton}">
-        <Style.Triggers><DataTrigger Binding="{Binding SelectedProcess}" Value="{x:Null}"><Setter Property="IsEnabled" Value="False"/></DataTrigger></Style.Triggers>
+        <Setter Property="IsEnabled" Value="{Binding CanActOnSelectedProcess}"/>
+    </Style>
+    <Style x:Key="ProcessStatusText" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource SecondaryForeground}"/>
+        <Setter Property="TextWrapping" Value="Wrap"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        <Setter Property="MaxHeight" Value="44"/><Setter Property="Margin" Value="0,8,0,0"/>
     </Style>
     <Style x:Key="MonitorNav" TargetType="RadioButton">
         <Setter Property="Foreground" Value="{DynamicResource SecondaryDisabled}"/><Setter Property="Background" Value="Transparent"/>

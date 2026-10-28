@@ -2,12 +2,19 @@ using NUnit.Framework;
 using System;
 using System.Collections;
 using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Automation;
+using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 #pragma warning disable 1591
@@ -25,7 +32,12 @@ namespace WinMemoryCleaner.Test
         private IDictionary _oldRegistrations, _oldSingletons;
         private bool _disposed;
 
-        private MainWindow CreateWindow(bool overlayEnabled = false)
+        private ProcessMonitor _processMonitor;
+        private StringWriter _bindingOutput;
+        private TextWriterTraceListener _bindingListener;
+        private SourceLevels _oldBindingLevel;
+
+        private MainWindow CreateWindow(bool overlayEnabled = false,Func<IResourceMonitor> createMonitor=null,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction=null)
         {
             Assert.IsNotNull(typeof(MainWindow).GetProperty("Monitoring"), "The real shell must expose its independent monitoring model.");
             Assert.IsNotNull(typeof(MainWindow).GetMethod("SelectPage"), "Navigation must select the real overview/process/settings pages.");
@@ -59,7 +71,19 @@ namespace WinMemoryCleaner.Test
             resources["EnumToBooleanConverter"] = new EnumToBooleanConverter();
             resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/WinMemoryCleaner.Community;component/Resources/MonitoringStyles.xaml", UriKind.Relative) });
             application.Resources = resources;
-            _window = new MainWindow(delegate { return new ResourceMonitor(new TemperatureSampler(null)); });
+            _bindingOutput=new StringWriter(CultureInfo.InvariantCulture);
+            _bindingListener=new TextWriterTraceListener(_bindingOutput);
+            _oldBindingLevel=PresentationTraceSources.DataBindingSource.Switch.Level;
+            PresentationTraceSources.DataBindingSource.Switch.Level=SourceLevels.Warning;
+            PresentationTraceSources.DataBindingSource.Listeners.Add(_bindingListener);
+            if(createMonitor==null)createMonitor=delegate { return new ResourceMonitor(new TemperatureSampler(null)); };
+            if(executeAction==null)_window=new MainWindow(createMonitor);
+            else
+            {
+                var constructor=typeof(MainWindow).GetConstructor(BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{typeof(Func<IResourceMonitor>),typeof(Func<ProcessSnapshot,bool,bool,ProcessActionResult>)},null);
+                Assert.IsNotNull(constructor,"Window action tests require the safe action-injection seam; never use the native service.");
+                _window=(MainWindow)constructor.Invoke(new object[]{createMonitor,executeAction});
+            }
             return _window;
         }
 
@@ -75,6 +99,90 @@ namespace WinMemoryCleaner.Test
             Dispatcher.PushFrame(frame);
         }
         private static void Set(object instance, string property, object value) { instance.GetType().GetProperty(property).SetValue(instance, value, null); }
+
+        private sealed class ProcessMonitor : IResourceMonitor
+        {
+            internal volatile string Mode="ready";
+            internal int Samples,Disposals;
+            public ResourceSnapshot Sample(bool processes,bool temperatures)
+            {
+                Interlocked.Increment(ref Samples);
+                if(Mode=="null")return null;
+                return processes&&Mode!="empty"?ProcessSnapshotForWindow():new ResourceSnapshot();
+            }
+            public void Suspend() { }
+            public void Dispose() { Interlocked.Increment(ref Disposals); }
+        }
+        private static ResourceSnapshot ProcessSnapshotForWindow()
+        {
+            var snapshot=new ResourceSnapshot();
+            snapshot.Processes.Add(new ProcessSnapshot { Id=8001,CreationTime=1101,Name="测试应用.exe",WorkingSetBytes=30 });
+            snapshot.Processes.Add(new ProcessSnapshot { Id=8002,CreationTime=1102,Name="game.exe",WorkingSetBytes=20 });
+            snapshot.Processes.Add(new ProcessSnapshot { Id=8003,CreationTime=1103,Name="other.exe",WorkingSetBytes=10 });
+            return snapshot;
+        }
+        private MainWindow CreateProcessWindow(Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction=null,string mode="ready")
+        {
+            _processMonitor=new ProcessMonitor { Mode=mode };
+            var window=CreateWindow(false,delegate { return _processMonitor; },executeAction);
+            window.Monitoring.RefreshSeconds=5;return window;
+        }
+        private static bool Until(Func<bool> ready,int milliseconds=2500)
+        {
+            var watch=Stopwatch.StartNew();
+            while(!ready()&&watch.ElapsedMilliseconds<milliseconds) { Drain();Thread.Sleep(3); }
+            return ready();
+        }
+        private void ShowProcesses(MainWindow window)
+        {
+            Select(1);window.Show();window.WindowState=WindowState.Normal;Drain();window.Monitoring.RefreshNow();
+            Assert.IsTrue(Until(delegate { return window.Monitoring.ProcessCount==3; }),"Controlled successful process rows must reach the real window.");
+            Drain();
+        }
+        private static void ApplyProcesses(MainWindow window,ResourceSnapshot snapshot,string failure=null)
+        {
+            var presentation=typeof(MonitoringViewModel).GetField("_processes",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(window.Monitoring);
+            presentation.GetType().GetMethod("Apply",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(presentation,new object[]{snapshot,failure});
+        }
+        private static void SelectProcess(MainWindow window,int index=0)
+        {
+            var grid=(DataGrid)window.FindName("ProcessGrid");grid.SelectedItem=grid.Items[index];
+            grid.GetBindingExpression(Selector.SelectedItemProperty).UpdateSource();Drain();
+        }
+        private static void InvokeAction(MainWindow window,bool terminate)
+        {
+            typeof(MainWindow).GetMethod("ExecuteSelected",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(window,new object[]{terminate});
+        }
+        private string Confirm(MainWindow window,bool confirmed,Action change=null)
+        {
+            string prompt=null;Exception changeError=null;
+            var timer=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(20) };
+            EventHandler tick=delegate
+            {
+                var dialog=Application.Current.Windows.Cast<Window>().OfType<MessageDialog>().FirstOrDefault();
+                if(dialog==null)return;
+                timer.Stop();prompt=(string)dialog.DataContext.GetType().GetProperty("Message").GetValue(dialog.DataContext,null);
+                try { if(change!=null)change(); }
+                catch(Exception error) { changeError=error; }
+                finally { dialog.DialogResult=changeError==null&&confirmed; }
+            };
+            timer.Tick+=tick;timer.Start();
+            try { ((Button)window.FindName("TerminateSelected")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
+            finally { timer.Stop();timer.Tick-=tick; }
+            Assert.IsNull(changeError,"The controlled dialog mutation failed.");return prompt;
+        }
+        private void FinishBindingTrace()
+        {
+            if(_bindingListener==null)return;
+            _bindingListener.Flush();PresentationTraceSources.DataBindingSource.Listeners.Remove(_bindingListener);
+            PresentationTraceSources.DataBindingSource.Switch.Level=_oldBindingLevel;
+            string diagnostic=_bindingOutput.ToString();
+            string path=Path.Combine(Path.GetDirectoryName(typeof(MainWindow).Assembly.Location),"window-binding.log");
+            byte[] bytes=Encoding.UTF8.GetBytes(diagnostic);
+            using(var output=new FileStream(path,FileMode.Append,FileAccess.Write,FileShare.Read))output.Write(bytes,0,bytes.Length);
+            _bindingListener.Dispose();_bindingOutput.Dispose();_bindingListener=null;_bindingOutput=null;
+            Assert.AreEqual(string.Empty,diagnostic,"Real-window binding warnings/errors are retained in window-binding.log.");
+        }
 
         private static IDictionary ContainerState(string name)
         {
@@ -98,16 +206,24 @@ namespace WinMemoryCleaner.Test
         [TearDown]
         public void Cleanup()
         {
-            if (_window != null) _window.Close();
-            if (_locator != null) _locator.Dispose();
-            if (_notifications != null) _notifications.Dispose();
-            if (_oldResources != null) Application.Current.Resources = _oldResources;
-            RestoreContainer("_container", _oldRegistrations);
-            RestoreContainer("_singleton", _oldSingletons);
-            _oldRegistrations = null; _oldSingletons = null;
-            _window = null; _locator = null; _notifications = null; _oldResources = null;
-            Settings.Reset(true);
-            Drain();
+            try
+            {
+                if (_window != null) _window.Close();
+                if (_locator != null) _locator.Dispose();
+                if (_notifications != null) _notifications.Dispose();
+                if (_oldResources != null) Application.Current.Resources = _oldResources;
+                RestoreContainer("_container", _oldRegistrations);
+                RestoreContainer("_singleton", _oldSingletons);
+                _oldRegistrations = null; _oldSingletons = null;
+                _window = null; _locator = null; _notifications = null; _oldResources = null;
+                if(_processMonitor!=null)
+                {
+                    if(_processMonitor.Samples==0)_processMonitor.Dispose();
+                    else Assert.IsTrue(Until(delegate { return _processMonitor.Disposals==1; }),"The owned monitor must be disposed exactly once.");
+                }
+                _processMonitor=null;Settings.Reset(true);Drain();
+            }
+            finally { FinishBindingTrace(); }
         }
         public void Dispose()
         {
@@ -124,6 +240,19 @@ namespace WinMemoryCleaner.Test
                 if (_window != null) _window.Dispose();
                 if (_locator != null) _locator.Dispose();
                 if (_notifications != null) _notifications.Dispose();
+                if(_processMonitor!=null)
+                {
+                    if(_processMonitor.Samples==0)_processMonitor.Dispose();
+                    else Assert.IsTrue(Until(delegate { return _processMonitor.Disposals==1; }));
+                }
+                if(_bindingListener!=null)
+                {
+                    PresentationTraceSources.DataBindingSource.Listeners.Remove(_bindingListener);
+                    PresentationTraceSources.DataBindingSource.Switch.Level=_oldBindingLevel;
+                    _bindingListener.Dispose();
+                }
+                if(_bindingOutput!=null)_bindingOutput.Dispose();
+                _processMonitor=null;_bindingListener=null;_bindingOutput=null;
                 _window = null; _locator = null; _notifications = null;
             }
         }
@@ -358,34 +487,150 @@ namespace WinMemoryCleaner.Test
         [Test]
         public void TerminationDialog_IdentifiesSelectionAndCancellationTakesNoAction()
         {
-            var window = CreateWindow(); window.Show(); Select(1); Drain();
-            var snapshotType = typeof(MainWindow).Assembly.GetType("WinMemoryCleaner.ProcessSnapshot");
-            var rowType = typeof(MainWindow).Assembly.GetType("WinMemoryCleaner.ProcessRow");
-            Assert.IsNotNull(snapshotType); Assert.IsNotNull(rowType);
-            var snapshot = Activator.CreateInstance(snapshotType);
-            Set(snapshot, "Id", Process.GetCurrentProcess().Id);
-            Set(snapshot, "Name", "测试应用.exe");
-            Set(snapshot, "CreationTime", 1L);
-            var row = Activator.CreateInstance(rowType, new[] { snapshot });
-            Set(Monitoring, "SelectedProcess", row);
-            string prompt = null;
-            var cancel = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(20) };
-            cancel.Tick += delegate
+            int executions=0;
+            var window=CreateProcessWindow(delegate { Interlocked.Increment(ref executions);return new ProcessActionResult(ProcessActionOutcome.Terminated,string.Empty); });
+            ShowProcesses(window);SelectProcess(window);
+            string prompt=Confirm(window,false);Drain();
+            Assert.IsNotNull(prompt);Assert.AreEqual(0,executions);
+            StringAssert.Contains("测试应用.exe",prompt);StringAssert.Contains("PID 8001",prompt);
+            StringAssert.Contains("未保存的数据可能丢失",prompt);StringAssert.Contains("未确认",window.Monitoring.ActionStatus);
+        }
+
+        [Test]
+        public void ProcessSearchFeedbackAndEscapeUseTheRealControls()
+        {
+            var window=CreateProcessWindow();ShowProcesses(window);
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo("en"));Drain();
+            var search=(TextBox)window.FindName("ProcessSearch");var clear=window.FindName("ClearProcessSearch") as Button;
+            var count=window.FindName("ProcessCountDisplay") as TextBlock;var empty=window.FindName("ProcessEmptyState") as TextBlock;
+            Assert.IsNotNull(clear);Assert.IsNotNull(count);Assert.IsNotNull(empty);
+            Assert.AreEqual("Clear process search",AutomationProperties.GetName(clear));Assert.IsFalse(clear.IsEnabled);
+            search.Text="game";Assert.AreEqual("game",window.Monitoring.SearchQuery);
+            Assert.IsTrue(clear.IsEnabled);Assert.IsTrue(Until(delegate { return window.Monitoring.ProcessesView.Count==1; }));
+            StringAssert.Contains("Matches: 1 / Total: 3",count.Text);
+            search.Text="no-match";Assert.IsTrue(Until(delegate { return window.Monitoring.ProcessesView.Count==0; }));Drain();
+            Assert.AreEqual(Visibility.Visible,empty.Visibility);Assert.AreEqual("No matching processes",empty.Text);
+            window.Activate();search.Focus();Drain();Assert.IsTrue(search.IsKeyboardFocused);
+            var escape=new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(search),Environment.TickCount,Key.Escape) { RoutedEvent=Keyboard.KeyDownEvent };
+            search.RaiseEvent(escape);Drain();Assert.IsTrue(escape.Handled);Assert.AreEqual(string.Empty,search.Text);
+            Assert.IsTrue(search.IsKeyboardFocused);Assert.AreEqual(3,window.Monitoring.ProcessesView.Count);Assert.IsFalse(clear.IsEnabled);
+            search.Text=" ";Assert.IsTrue(clear.IsEnabled);clear.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Drain();
+            Assert.AreEqual(string.Empty,search.Text);Assert.IsTrue(search.IsKeyboardFocused);Assert.IsFalse(clear.IsEnabled);
+            search.Text="game";var grid=(DataGrid)window.FindName("ProcessGrid");
+            grid.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice,PresentationSource.FromVisual(grid),Environment.TickCount,Key.Escape) { RoutedEvent=Keyboard.KeyDownEvent });
+            Assert.AreEqual("game",search.Text,"Esc outside the search input must not clear its text.");Assert.IsTrue(window.IsVisible);
+        }
+
+        [Test]
+        public void ProcessStatusShowsLoadingFailureAndSuccessfulEmptyWithoutInventingCounts()
+        {
+            var window=CreateProcessWindow(mode:"null");
+            Select(1);window.Show();window.WindowState=WindowState.Normal;Drain();window.Monitoring.RefreshNow();
+            var status=window.FindName("ProcessStatus") as TextBlock;var empty=window.FindName("ProcessEmptyState") as TextBlock;
+            Assert.IsNotNull(status);Assert.IsNotNull(empty);
+            Assert.IsTrue(Until(delegate { return window.Monitoring.ProcessStatusText==window.Monitoring.Labels["ProcessFailed"]; }));
+            Assert.AreEqual("—",window.Monitoring.ProcessCountText);Assert.AreEqual(window.Monitoring.Labels["ProcessFailed"],empty.Text);
+            window.Hide();window.Monitoring.SetViewState(true,true);Drain();
+            Assert.AreEqual(window.Monitoring.Labels["ProcessLoading"],status.Text);Assert.AreEqual("—",window.Monitoring.ProcessCountText);
+            ApplyProcesses(window,new ResourceSnapshot());Drain();
+            Assert.AreEqual(window.Monitoring.Labels["ProcessEmpty"],status.Text);Assert.AreEqual(window.Monitoring.Labels["ProcessEmpty"],empty.Text);
+            Assert.AreEqual(string.Format(Localizer.Culture,window.Monitoring.Labels["ProcessMatches"],0,0),window.Monitoring.ProcessCountText);
+        }
+
+        [Test]
+        public void ProcessFeedbackStaysBoundedAndThemeAwareAtTheExpandedMinimum()
+        {
+            var window=CreateProcessWindow();ShowProcesses(window);window.Width=window.MinWidth;window.Height=window.MinHeight;
+            var status=window.FindName("ProcessStatus") as TextBlock;var count=window.FindName("ProcessCountDisplay") as TextBlock;
+            var clear=window.FindName("ClearProcessSearch") as Button;Assert.IsNotNull(status);Assert.IsNotNull(count);Assert.IsNotNull(clear);
+            string detail=new string('x',4096);
+            foreach(string language in new[]{"zh-Hans","en","de"})
             {
-                var dialog = Application.Current.Windows.Cast<Window>().FirstOrDefault(w => w is MessageDialog);
-                if (dialog == null) return;
-                cancel.Stop();
-                prompt = (string)dialog.DataContext.GetType().GetProperty("Message").GetValue(dialog.DataContext, null);
-                dialog.DialogResult = false;
-            };
-            cancel.Start();
-            ((Button)window.FindName("TerminateSelected")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            cancel.Stop(); Drain();
-            Assert.IsNotNull(prompt);
-            StringAssert.Contains("测试应用.exe", prompt);
-            StringAssert.Contains("PID " + Process.GetCurrentProcess().Id, prompt);
-            StringAssert.Contains("未保存的数据可能丢失", prompt);
-            StringAssert.Contains("未确认", (string)Monitoring.GetType().GetProperty("ActionStatus").GetValue(Monitoring, null));
+                Localizer.Language=new Language(CultureInfo.GetCultureInfo(language));window.Monitoring.ClearSearch();ApplyProcesses(window,ProcessSnapshotForWindow());
+                SelectProcess(window);ApplyProcesses(window,null,detail);Drain();window.UpdateLayout();
+                Assert.AreEqual(window.Monitoring.Labels["ProcessStale"],status.Text);Assert.AreEqual(detail,status.ToolTip);
+                Assert.AreEqual(BindingStatus.Active,status.GetBindingExpression(TextBlock.TextProperty).Status);
+                Assert.AreEqual(BindingStatus.Active,status.GetBindingExpression(FrameworkElement.ToolTipProperty).Status);
+                Assert.LessOrEqual(status.ActualHeight,44);Assert.Greater(((DataGrid)window.FindName("ProcessGrid")).ActualHeight,70);
+                foreach(string name in new[]{"ProcessSearch","ClearProcessSearch","ProcessCountDisplay","ProcessStatus","TerminateSelected"})
+                {
+                    var element=(FrameworkElement)window.FindName(name);var point=element.TranslatePoint(new Point(),window);
+                    Assert.GreaterOrEqual(point.X,0);Assert.LessOrEqual(point.X+element.ActualWidth,window.ActualWidth);
+                    Assert.LessOrEqual(point.Y+element.ActualHeight,window.ActualHeight);
+                }
+                Assert.AreEqual(window.Monitoring.Labels["ClearSearchName"],AutomationProperties.GetName(clear));
+                SelectProcess(window);Assert.IsFalse(((Button)window.FindName("TrimSelected")).IsEnabled);
+                Assert.IsFalse(((Button)window.FindName("TerminateSelected")).IsEnabled);
+            }
+            object oldBrush=Application.Current.Resources["SecondaryForeground"];
+            try
+            {
+                foreach(Brush brush in new Brush[]{Brushes.White,Brushes.Black})
+                { Application.Current.Resources["SecondaryForeground"]=brush;Drain();Assert.AreSame(brush,status.Foreground); }
+            }
+            finally { if(oldBrush==null)Application.Current.Resources.Remove("SecondaryForeground");else Application.Current.Resources["SecondaryForeground"]=oldBrush; }
+            Assert.AreEqual(760,window.MinWidth);Assert.AreEqual(520,window.MinHeight);
+        }
+
+        [Test]
+        public void ActionEntryRejectsStalePendingAndInactiveRowsEvenWhenButtonsAreBypassed()
+        {
+            int executions=0;
+            var window=CreateProcessWindow(delegate { Interlocked.Increment(ref executions);return new ProcessActionResult(ProcessActionOutcome.Trimmed,string.Empty); });
+            ShowProcesses(window);SelectProcess(window);ApplyProcesses(window,null,"controlled stale list");SelectProcess(window);
+            ((Button)window.FindName("TrimSelected")).IsEnabled=true;InvokeAction(window,false);Drain();
+            Assert.AreEqual(0,executions);Assert.AreEqual(window.Monitoring.Labels["ProcessTargetUnavailable"],window.Monitoring.ActionStatus);
+            ApplyProcesses(window,ProcessSnapshotForWindow());SelectProcess(window);window.Monitoring.SearchQuery="other";
+            InvokeAction(window,false);Drain();Assert.AreEqual(0,executions);
+            Assert.AreEqual(window.Monitoring.Labels["ProcessTargetUnavailable"],window.Monitoring.ActionStatus);
+            window.Monitoring.ClearSearch();Select(0);InvokeAction(window,false);Drain();Assert.AreEqual(0,executions);
+            Assert.IsNull(window.Monitoring.SelectedProcess);
+        }
+
+        [Test]
+        public void ConfirmedTargetChangedWhileDialogWasOpenNeverQueuesAction()
+        {
+            int executions=0;
+            var window=CreateProcessWindow(delegate { Interlocked.Increment(ref executions);return new ProcessActionResult(ProcessActionOutcome.Terminated,string.Empty); });
+            ShowProcesses(window);
+            foreach(string change in new[]{"failure","exit","reuse","pending","filter","leave"})
+            {
+                Select(1);window.Monitoring.ClearSearch();ApplyProcesses(window,ProcessSnapshotForWindow());SelectProcess(window);
+                string prompt=Confirm(window,true,delegate
+                {
+                    var snapshot=ProcessSnapshotForWindow();
+                    if(change=="failure")ApplyProcesses(window,null,"controlled failure during confirmation");
+                    else if(change=="exit") { snapshot.Processes.RemoveAt(0);ApplyProcesses(window,snapshot); }
+                    else if(change=="reuse") { snapshot.Processes[0].CreationTime++;ApplyProcesses(window,snapshot); }
+                    else if(change=="leave")Select(0);
+                    else
+                    {
+                        window.Monitoring.SearchQuery="other";
+                        if(change=="filter")Assert.IsTrue(Until(delegate { return window.Monitoring.ProcessesView.Count==1; }));
+                    }
+                });
+                Assert.IsNotNull(prompt,change);var watch=Stopwatch.StartNew();
+                Until(delegate { return executions!=0||watch.ElapsedMilliseconds>=80; });Assert.AreEqual(0,executions,change);
+                Assert.AreEqual(window.Monitoring.Labels["ProcessTargetUnavailable"],window.Monitoring.ActionStatus,change);
+                Assert.IsFalse(((Button)window.FindName("TrimSelected")).IsEnabled,change);
+                Assert.IsFalse(((Button)window.FindName("TerminateSelected")).IsEnabled,change);
+            }
+        }
+
+        [Test]
+        public void ValidConfirmedActionKeepsCapturedIdentityAndRejectsConcurrentEntry()
+        {
+            int executions=0;ProcessSnapshot captured=null;bool wasTermination=false,wasConfirmed=false;
+            var window=CreateProcessWindow(delegate(ProcessSnapshot target,bool terminate,bool confirmed)
+            {
+                captured=target;wasTermination=terminate;wasConfirmed=confirmed;Interlocked.Increment(ref executions);
+                return new ProcessActionResult(ProcessActionOutcome.Terminated,string.Empty);
+            });
+            ShowProcesses(window);SelectProcess(window);
+            string prompt=Confirm(window,true,delegate { SelectProcess(window,1);InvokeAction(window,false); });
+            Assert.IsNotNull(prompt);Assert.IsTrue(Until(delegate { return window.Monitoring.ActionStatus.Contains(window.Monitoring.Labels["Terminated"]); }));
+            Assert.AreEqual(1,executions);Assert.IsNotNull(captured);Assert.AreEqual(8001,captured.Id);Assert.AreEqual(1101,captured.CreationTime);
+            Assert.IsTrue(wasTermination);Assert.IsTrue(wasConfirmed);Assert.IsTrue(((Button)window.FindName("TrimSelected")).IsEnabled);
         }
 
         [Test]

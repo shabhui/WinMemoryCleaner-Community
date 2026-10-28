@@ -59,7 +59,7 @@
 $R='G:\AI项目\WinMemoryCleaner-main\WinMemoryCleaner-Community'
 $S=$env:PI_SCRATCH_DIR
 $N=Join-Path $S 'wmc-goal\nunit\nunit-console.exe'
-$B=Join-Path $S 'recovered\RunMainAnalyzerChecks.ps1'
+$B=Join-Path $S 'InvokeStrictProcessBuild.ps1'
 function Build([string]$Label,[bool]$Test=$true) {
     $arguments=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$B,'-Label',$Label)
     if($Test){$arguments+='-TestBuild'}
@@ -199,4 +199,4 @@ Git 一律加 `-c safe.directory=G:/AI项目/WinMemoryCleaner-main/WinMemoryClea
 
 状态/反馈对应规格4/8，Task1/2/3；搜索合并与生命周期对应规格5，Task2/3；批量与选择对应规格6/7，Task1/2/3；测试/测量/交付对应规格9/10，Task4。各任务接口名称与后续调用一致；五类Review Focus均有归属测试；不重开温度性能或扩大产品范围。
 
-执行方式已确定为native连续推进，不再要求选择执行代理。计划交付用户后仅等待本计划审阅，确认后使用executing-plans与正常TDD流程连续完成，常规实现细节、严格构建与安全测试不逐项停问。
+用户已明确以“是直接开始干”批准本计划；正在使用executing-plans与正常TDD流程native连续执行，不再等待审批。执行Ruling：旧PowerShell -File会将无BOM UTF-8 helper内的中文路径误解码；scratch ASCII包装用显式UTF-8 ReadAllText + ScriptBlock.Create加载原helper，保留九个分析器、规则集和全部严格构建要求。

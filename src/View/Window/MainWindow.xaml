@@ -70,11 +70,19 @@
             </ScrollViewer>
             <Grid x:Name="ProcessPage" Grid.Row="1" Visibility="Collapsed">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <StackPanel><TextBlock Text="{Binding Labels[Search]}" Style="{StaticResource MonitorLabel}"/><TextBox x:Name="ProcessSearch" Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" Height="34" Padding="8,4"/></StackPanel>
-                    <StackPanel Grid.Column="1" Margin="16,0,0,0" VerticalAlignment="Bottom" Orientation="Horizontal"><TextBlock Text="{Binding ProcessCountText}" VerticalAlignment="Center" Margin="0,0,12,0"/><Button Content="{Binding Labels[RefreshNow]}" Style="{StaticResource MonitorButton}" Click="OnRefreshClick"/></StackPanel>
+                <Grid Margin="0,0,0,8">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                    <!-- One row for search, count, clear and refresh keeps the table tall enough at the 520px minimum. -->
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right" Content="{Binding Labels[RefreshNow]}" Style="{StaticResource MonitorButton}" Click="OnRefreshClick" Margin="8,0,0,0"/>
+                        <Button x:Name="ClearProcessSearch" DockPanel.Dock="Right" Content="{Binding Labels[ClearSearch]}" AutomationProperties.Name="{Binding Labels[ClearSearchName]}" IsEnabled="{Binding CanClearSearch}" Style="{StaticResource MonitorButton}" Padding="10,4" Margin="8,0,0,0" Click="OnClearProcessSearch"/>
+                        <TextBox x:Name="ProcessSearch" DockPanel.Dock="Right" Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{Binding Labels[Search]}" Height="34" Padding="8,4" MinWidth="160" KeyDown="OnProcessSearchKeyDown"/>
+                        <TextBlock x:Name="ProcessCountDisplay" Text="{Binding ProcessCountText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    </DockPanel>
+                    <TextBlock x:Name="ProcessStatus" Grid.Row="1" Text="{Binding ProcessStatusText}" ToolTip="{Binding ProcessStatusDetail}" Visibility="{Binding HasProcessStatus, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource ProcessStatusText}"/>
                 </Grid>
-                <DataGrid x:Name="ProcessGrid" Grid.Row="1" ItemsSource="{Binding ProcessesView}" SelectedItem="{Binding SelectedProcess}" IsReadOnly="True" AutoGenerateColumns="False"
+                <Grid Grid.Row="1">
+                <DataGrid x:Name="ProcessGrid" ItemsSource="{Binding ProcessesView}" SelectedItem="{Binding SelectedProcess}" IsReadOnly="True" AutoGenerateColumns="False"
                     CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" SelectionMode="Single" SelectionUnit="FullRow" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                     HorizontalGridLinesBrush="{DynamicResource PrimaryBorder}" BorderBrush="{DynamicResource PrimaryBorder}" Background="{DynamicResource PrimaryBackground}"
                     EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" Sorting="OnProcessSorting">
@@ -88,6 +96,12 @@
                         <DataGridTextColumn Binding="{Binding GpuMemoryText}" Header="VRAM" SortMemberPath="GpuMemoryBytes" Width="108" ElementStyle="{StaticResource ProcessNumber}"/>
                     </DataGrid.Columns>
                 </DataGrid>
+                <TextBlock x:Name="ProcessEmptyState" Text="{Binding ProcessStatusText}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="24" Foreground="{DynamicResource SecondaryDisabled}" IsHitTestVisible="False">
+                    <TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers>
+                        <MultiDataTrigger><MultiDataTrigger.Conditions><Condition Binding="{Binding ElementName=ProcessGrid, Path=Items.Count}" Value="0"/><Condition Binding="{Binding HasProcessStatus}" Value="True"/></MultiDataTrigger.Conditions><Setter Property="Visibility" Value="Visible"/></MultiDataTrigger>
+                    </Style.Triggers></Style></TextBlock.Style>
+                </TextBlock>
+                </Grid>
                 <StackPanel Grid.Row="2">
                     <TextBlock Text="{Binding Labels[ProcessNote]}" Style="{StaticResource MonitorNote}"/>
                     <WrapPanel><Button x:Name="TrimSelected" Content="{Binding Labels[Trim]}" Click="OnTrimClick" Style="{StaticResource ProcessActionButton}" Margin="0,0,10,0"/><Button x:Name="TerminateSelected" Content="{Binding Labels[Terminate]}" Click="OnTerminateClick" BorderBrush="#D85A65" Foreground="#D34B58" Style="{StaticResource ProcessActionButton}"/></WrapPanel>

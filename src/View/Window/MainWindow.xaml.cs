@@ -24,6 +24,7 @@ namespace WinMemoryCleaner
         private bool _closed;
         private bool _disposed;
         private bool _actionRunning;
+        private readonly Func<ProcessSnapshot,bool,bool,ProcessActionResult> _executeAction;
         private int _page;
         private double _lastExpandedHeight = ExpandedHeight;
         private double _lastExpandedWidth = ExpandedWidth;
@@ -34,7 +35,11 @@ namespace WinMemoryCleaner
         /// <summary>Creates the shell without starting detailed sampling until it is visible.</summary>
         public MainWindow() : this(delegate { return new ResourceMonitor(); }) { }
         internal MainWindow(Func<IResourceMonitor> createMonitor)
+            : this(createMonitor,delegate(ProcessSnapshot target,bool terminate,bool confirmed) { return new ProcessActionService().Execute(target,terminate,confirmed); }) { }
+        internal MainWindow(Func<IResourceMonitor> createMonitor,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction)
         {
+            if(executeAction==null)throw new ArgumentNullException("executeAction");
+            _executeAction=executeAction;
             var locator = (ViewModelLocator)FindResource("ViewModelLocator");
             _viewModel = locator.MainViewModel;
             Monitoring = new MonitoringViewModel(_viewModel, Dispatcher, createMonitor);
@@ -87,6 +92,15 @@ namespace WinMemoryCleaner
             if (button != null && int.TryParse(Convert.ToString(button.Tag, System.Globalization.CultureInfo.InvariantCulture), out page)) SelectPage(page);
         }
         private void OnRefreshClick(object sender, RoutedEventArgs e) { Monitoring.RefreshNow(); }
+        private void OnClearProcessSearch(object sender,RoutedEventArgs e)
+        {
+            Monitoring.ClearSearch();ProcessSearch.Focus();
+        }
+        private void OnProcessSearchKeyDown(object sender,KeyEventArgs e)
+        {
+            if(e.Key!=Key.Escape)return;
+            OnClearProcessSearch(sender,e);e.Handled=true;
+        }
         private void OnInstallTemperatureDriver(object sender,RoutedEventArgs e)
         {
             if(_closed||!Monitoring.CanInstallDriver)return;
@@ -110,39 +124,53 @@ namespace WinMemoryCleaner
         private void OnTerminateClick(object sender, RoutedEventArgs e) { ExecuteSelected(true); }
         private void ExecuteSelected(bool terminate)
         {
-            if (_actionRunning) return;
-            var selected = Monitoring.SelectedProcess;
-            if (selected == null) { Monitoring.ActionStatus = Monitoring.Labels["NoSelection"]; return; }
-            // Capture the selected identity BEFORE opening a modal dialog. A refresh may replace the row.
-            var target = selected.Snapshot;
-            if (terminate)
+            if(_closed||_disposed||_actionRunning)return;
+            var selected=Monitoring.SelectedProcess;
+            if(selected==null) { Monitoring.ActionStatus=Monitoring.Labels["NoSelection"];return; }
+            // Capture identity before confirmation. UI checks supplement the service's retained-handle checks.
+            var target=selected.Snapshot;
+            if(!Monitoring.CanActOnSelectedProcess||!Monitoring.IsCurrentProcessTarget(target))
+            { Monitoring.ActionStatus=Monitoring.Labels["ProcessTargetUnavailable"];return; }
+            SetActionRunning(true);bool queued=false;
+            try
             {
-                var prompt = string.Format(Localizer.Culture, Monitoring.Labels["Confirm"], target.Name, target.Id);
-                var dialog = new MessageDialog(this, prompt, Enums.Dialog.Button.No, Enums.Dialog.Button.Yes) { Title = Monitoring.Labels["ConfirmTitle"] };
-                if (dialog.ShowDialog() != true)
+                if(terminate)
                 {
-                    Monitoring.ActionStatus = Monitoring.Labels["NotConfirmed"];
-                    return;
+                    var prompt=string.Format(Localizer.Culture,Monitoring.Labels["Confirm"],target.Name,target.Id);
+                    var dialog=new MessageDialog(this,prompt,Enums.Dialog.Button.No,Enums.Dialog.Button.Yes) { Title=Monitoring.Labels["ConfirmTitle"] };
+                    if(dialog.ShowDialog()!=true) { Monitoring.ActionStatus=Monitoring.Labels["NotConfirmed"];return; }
                 }
-            }
-            _actionRunning = true;
-            TrimSelected.IsEnabled = false; TerminateSelected.IsEnabled = false;
-            ThreadPool.QueueUserWorkItem(delegate
-            {
-                var result = new ProcessActionService().Execute(target, terminate, terminate);
-                if (_closed || Dispatcher.HasShutdownStarted) return;
-                Dispatcher.BeginInvoke(new Action(delegate
+                if(_closed||_disposed||!Monitoring.IsCurrentProcessTarget(target))
+                { Monitoring.ActionStatus=Monitoring.Labels["ProcessTargetUnavailable"];return; }
+                queued=ThreadPool.QueueUserWorkItem(delegate
                 {
-                    if (_closed) return;
-                    _actionRunning = false;
-                    TrimSelected.ClearValue(IsEnabledProperty); TerminateSelected.ClearValue(IsEnabledProperty);
-                    string key = result.Outcome.ToString();
-                    Monitoring.ActionStatus = target.Name + " (PID " + target.Id + ") — " + Monitoring.Labels[key];
-                    if (result.Outcome == ProcessActionOutcome.Failed || result.Outcome == ProcessActionOutcome.AccessDenied)
-                        Monitoring.ActionStatus += "：" + result.Detail;
-                    Monitoring.RefreshNow();
-                }), DispatcherPriority.Background);
-            });
+                    ProcessActionResult result;
+                    try { result=_executeAction(target,terminate,terminate)??new ProcessActionResult(ProcessActionOutcome.Failed,"The action returned no result"); }
+                    catch(Exception error) { result=new ProcessActionResult(ProcessActionOutcome.Failed,error.Message); }
+                    if(_closed||Dispatcher.HasShutdownStarted)return;
+                    try
+                    {
+                        Dispatcher.BeginInvoke(new Action(delegate
+                        {
+                            if(_closed||_disposed)return;
+                            SetActionRunning(false);
+                            string key=result.Outcome.ToString();
+                            Monitoring.ActionStatus=target.Name+" (PID "+target.Id+") — "+Monitoring.Labels[key];
+                            if(result.Outcome==ProcessActionOutcome.Failed||result.Outcome==ProcessActionOutcome.AccessDenied)
+                                Monitoring.ActionStatus+="："+result.Detail;
+                            Monitoring.RefreshNow();
+                        }),DispatcherPriority.Background);
+                    }
+                    catch(InvalidOperationException) { } // A closing Dispatcher cannot accept completion work.
+                });
+            }
+            finally { if(!queued)SetActionRunning(false); }
+        }
+        private void SetActionRunning(bool running)
+        {
+            _actionRunning=running;
+            if(running) { TrimSelected.IsEnabled=false;TerminateSelected.IsEnabled=false; }
+            else { TrimSelected.ClearValue(IsEnabledProperty);TerminateSelected.ClearValue(IsEnabledProperty); }
         }
         private void OnMonitoringChanged(object sender, PropertyChangedEventArgs e)
         {
