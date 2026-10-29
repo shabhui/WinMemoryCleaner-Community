@@ -11,11 +11,16 @@ using Forms = System.Windows.Forms;
 #pragma warning disable 1591
 namespace WinMemoryCleaner
 {
-    public sealed class DisplayChoice
+    public sealed class DisplayChoice : ObservableObject
     {
+        private string _name;
         public string Id { get; private set; }
-        public string Name { get; private set; }
-        public DisplayChoice(string id, string name) { Id=id; Name=name; }
+        public string Name
+        {
+            get { return _name; }
+            internal set { if(_name==value)return; _name=value; RaisePropertyChanged("Name"); }
+        }
+        public DisplayChoice(string id, string name) { Id=id; _name=name; }
     }
 
     public sealed class MonitoringViewModel : ObservableObject, IDisposable
@@ -218,9 +223,17 @@ namespace WinMemoryCleaner
         public ListSortDirection Sort(string field) { return _processes.Sort(field); }
         public void RefreshDisplays()
         {
-            var list=new List<DisplayChoice>();
-            foreach(var screen in Forms.Screen.AllScreens) list.Add(new DisplayChoice(screen.DeviceName,screen.DeviceName+" ("+screen.Bounds.Width+"×"+screen.Bounds.Height+")"));
+            // Reuse rows by Id: replacing the selected instance clears the ComboBox selection,
+            // which writes the primary-display default back over the user's saved display.
+            var old=Displays??new List<DisplayChoice>();
+            var list=new List<DisplayChoice> { Display(old,string.Empty,Labels["PrimaryDisplay"]) };
+            foreach(var screen in Forms.Screen.AllScreens) list.Add(Display(old,screen.DeviceName,screen.DeviceName+" ("+screen.Bounds.Width+"×"+screen.Bounds.Height+")"));
             Displays=list; RaisePropertyChanged("Displays");
+        }
+        private static DisplayChoice Display(IEnumerable<DisplayChoice> old,string id,string name)
+        {
+            foreach(var choice in old) if(choice.Id==id) { choice.Name=name; return choice; }
+            return new DisplayChoice(id,name);
         }
         public void SavePosition(string screen,double x,double y)
         {
@@ -290,6 +303,7 @@ namespace WinMemoryCleaner
             if(_disposed||e.PropertyName==null||e.PropertyName.Length!=0)return; // Refresh once after the full language switch, not its intermediate Culture event.
             if(!_dispatcher.CheckAccess()) { _dispatcher.BeginInvoke(new Action(delegate { OnLanguageChanged(sender,e); })); return; }
             Labels.Refresh();
+            if(Displays!=null) foreach(var display in Displays) if(string.IsNullOrEmpty(display.Id)) display.Name=Labels["PrimaryDisplay"]; // Rename in place; replacing rows would clear the saved display.
             _processes.RefreshText();
             foreach(string name in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail"})RaisePropertyChanged(name);
             RaiseSensorStatus();

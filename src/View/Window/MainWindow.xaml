@@ -41,7 +41,7 @@
                     <Border Style="{StaticResource MonitorPanel}" Margin="0,0,0,14">
                         <StackPanel>
                             <Grid><TextBlock Text="{Binding Labels[Memory]}" Style="{StaticResource MonitorLabel}"/><TextBlock Text="{Binding MemoryText}" FontSize="28" FontWeight="SemiBold" HorizontalAlignment="Right"/></Grid>
-                            <ProgressBar Value="{Binding DataContext.Computer.Memory.Physical.Used.Percentage, RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}" Maximum="100" Height="10" Margin="0,12,0,14" Foreground="{DynamicResource Accent}"/>
+                            <ProgressBar x:Name="MemoryUsageBar" Value="{Binding DataContext.Computer.Memory.Physical.Used.Percentage, RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}" Maximum="100" Height="10" Margin="0,12,0,14" Style="{StaticResource MonitorProgress}"/>
                             <StackPanel Orientation="Horizontal" DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}">
                                 <TextBlock Text="{Binding Path=(local:Localizer.String).Used}"/><TextBlock Text="{Binding Computer.Memory.Physical.Used.Value, StringFormat={}{0:0.0}}" Margin="10,0,4,0"/><TextBlock Text="{Binding Computer.Memory.Physical.Used.Unit}"/>
                                 <TextBlock Text=" / " Margin="10,0"/><TextBlock Text="{Binding Computer.Memory.Physical.Total.Value, StringFormat={}{0:0.0}}" Margin="0,0,4,0"/><TextBlock Text="{Binding Computer.Memory.Physical.Total.Unit}"/>
@@ -76,7 +76,7 @@
                     <DockPanel LastChildFill="True">
                         <Button DockPanel.Dock="Right" Content="{Binding Labels[RefreshNow]}" Style="{StaticResource MonitorButton}" Click="OnRefreshClick" Margin="8,0,0,0"/>
                         <Button x:Name="ClearProcessSearch" DockPanel.Dock="Right" Content="{Binding Labels[ClearSearch]}" AutomationProperties.Name="{Binding Labels[ClearSearchName]}" IsEnabled="{Binding CanClearSearch}" Style="{StaticResource MonitorButton}" Padding="10,4" Margin="8,0,0,0" Click="OnClearProcessSearch"/>
-                        <TextBox x:Name="ProcessSearch" DockPanel.Dock="Right" Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{Binding Labels[Search]}" Height="34" Padding="8,4" MinWidth="160" KeyDown="OnProcessSearchKeyDown"/>
+                        <TextBox x:Name="ProcessSearch" DockPanel.Dock="Right" Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="{Binding Labels[Search]}" Style="{StaticResource MonitorSearchBox}" Height="34" MinWidth="200" KeyDown="OnProcessSearchKeyDown"/>
                         <TextBlock x:Name="ProcessCountDisplay" Text="{Binding ProcessCountText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     </DockPanel>
                     <TextBlock x:Name="ProcessStatus" Grid.Row="1" Text="{Binding ProcessStatusText}" ToolTip="{Binding ProcessStatusDetail}" Visibility="{Binding HasProcessStatus, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource ProcessStatusText}"/>
@@ -88,12 +88,12 @@
                     EnableRowVirtualization="True" EnableColumnVirtualization="True" VirtualizingStackPanel.IsVirtualizing="True" VirtualizingStackPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True" Sorting="OnProcessSorting">
                     <DataGrid.Columns>
                         <DataGridTextColumn Binding="{Binding Name}" Header="Name" SortMemberPath="Name" Width="*" MinWidth="100" ElementStyle="{StaticResource ProcessCell}"/>
-                        <DataGridTextColumn Binding="{Binding Id}" Header="PID" SortMemberPath="Id" Width="64" ElementStyle="{StaticResource ProcessNumber}"/>
-                        <DataGridTextColumn Binding="{Binding MemoryText}" Header="Working set" SortMemberPath="WorkingSetBytes" Width="108" ElementStyle="{StaticResource ProcessNumber}"/>
-                        <DataGridTextColumn Binding="{Binding PrivateText}" Header="Private" SortMemberPath="PrivateBytes" Width="108" ElementStyle="{StaticResource ProcessNumber}"/>
-                        <DataGridTextColumn Binding="{Binding CpuText}" Header="CPU %" SortMemberPath="CpuUsage" Width="74" ElementStyle="{StaticResource ProcessNumber}"/>
-                        <DataGridTextColumn Binding="{Binding GpuText}" Header="GPU %" SortMemberPath="GpuUsage" Width="74" ElementStyle="{StaticResource ProcessNumber}"/>
-                        <DataGridTextColumn Binding="{Binding GpuMemoryText}" Header="VRAM" SortMemberPath="GpuMemoryBytes" Width="108" ElementStyle="{StaticResource ProcessNumber}"/>
+                        <DataGridTextColumn Binding="{Binding Id}" Header="PID" SortMemberPath="Id" Width="64" ElementStyle="{StaticResource ProcessNumber}" HeaderStyle="{StaticResource NumericColumnHeader}"/>
+                        <DataGridTextColumn Binding="{Binding MemoryText}" Header="Working set" SortMemberPath="WorkingSetBytes" Width="108" ElementStyle="{StaticResource ProcessNumber}" HeaderStyle="{StaticResource NumericColumnHeader}"/>
+                        <DataGridTextColumn Binding="{Binding PrivateText}" Header="Private" SortMemberPath="PrivateBytes" Width="108" ElementStyle="{StaticResource ProcessNumber}" HeaderStyle="{StaticResource NumericColumnHeader}"/>
+                        <DataGridTextColumn Binding="{Binding CpuText}" Header="CPU %" SortMemberPath="CpuUsage" Width="74" ElementStyle="{StaticResource ProcessNumber}" HeaderStyle="{StaticResource NumericColumnHeader}"/>
+                        <DataGridTextColumn Binding="{Binding GpuText}" Header="GPU %" SortMemberPath="GpuUsage" Width="74" ElementStyle="{StaticResource ProcessNumber}" HeaderStyle="{StaticResource NumericColumnHeader}"/>
+                        <DataGridTextColumn Binding="{Binding GpuMemoryText}" Header="VRAM" SortMemberPath="GpuMemoryBytes" Width="108" ElementStyle="{StaticResource ProcessNumber}" HeaderStyle="{StaticResource NumericColumnHeader}"/>
                     </DataGrid.Columns>
                 </DataGrid>
                 <TextBlock x:Name="ProcessEmptyState" Text="{Binding ProcessStatusText}" HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center" Margin="24" Foreground="{DynamicResource SecondaryDisabled}" IsHitTestVisible="False">
@@ -135,8 +135,21 @@
         </Grid>
         <Border Grid.Row="2" BorderBrush="{DynamicResource PrimaryBorder}" BorderThickness="0,1,0,0" Padding="20,14">
             <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding PhysicalMemoryHeader}"/><TextBlock Text="{Binding VirtualMemoryHeader}" Visibility="{Binding ShowVirtualMemory, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                <!-- Hidden (not Collapsed) keeps the footer height stable while progress replaces the summary. -->
+                <StackPanel x:Name="MemorySummary" VerticalAlignment="Center">
+                    <StackPanel.Style><Style TargetType="StackPanel"><Style.Triggers><DataTrigger Binding="{Binding IsOptimizationRunning}" Value="True"><Setter Property="Visibility" Value="Hidden"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
+                    <TextBlock Text="{Binding PhysicalMemoryHeader}"/><TextBlock Text="{Binding VirtualMemoryHeader}" Visibility="{Binding ShowVirtualMemory, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                     <TextBlock Text="{Binding Monitoring.Labels[ResourceNote], RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}" Foreground="{DynamicResource SecondaryDisabled}" TextWrapping="Wrap" Margin="0,6,14,0" Visibility="{Binding CompactMode, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                </StackPanel>
+                <StackPanel x:Name="OptimizationProgressPanel" VerticalAlignment="Center" Margin="0,0,14,0" Visibility="{Binding IsOptimizationRunning, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <DockPanel LastChildFill="True">
+                        <TextBlock x:Name="OptimizationElapsed" DockPanel.Dock="Right" Foreground="{DynamicResource SecondaryDisabled}" Margin="12,0,0,0"/>
+                        <TextBlock x:Name="OptimizationCount" DockPanel.Dock="Right" Margin="12,0,0,0">
+                            <TextBlock.Text><MultiBinding StringFormat="{}{0} / {1}"><Binding Path="OptimizationProgressValue"/><Binding Path="OptimizationProgressTotal"/></MultiBinding></TextBlock.Text>
+                        </TextBlock>
+                        <TextBlock x:Name="OptimizationStep" Text="{Binding OptimizationProgressStep}" TextTrimming="CharacterEllipsis"/>
+                    </DockPanel>
+                    <ProgressBar x:Name="OptimizationProgressBar" Maximum="{Binding OptimizationProgressTotal, Mode=OneWay}" Value="{Binding OptimizationProgressValue, Mode=OneWay}" Height="6" Margin="0,8,0,0" Style="{StaticResource MonitorProgress}"/>
                 </StackPanel>
                 <Button x:Name="Optimize" Grid.Column="1" Content="{Binding Path=(local:Localizer.String).Optimize}" Command="{Binding OptimizeCommand}" Padding="26,12" BorderBrush="{DynamicResource Accent}" Style="{StaticResource MonitorButton}" VerticalAlignment="Center"/>
             </Grid>

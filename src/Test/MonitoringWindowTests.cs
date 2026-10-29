@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -671,6 +672,157 @@ namespace WinMemoryCleaner.Test
             }
             window.Close();Drain();Assert.IsFalse(window.Monitoring.CanInstallDriver);
             Assert.IsFalse(window.Monitoring.BeginDriverInstallation(true));
+        }
+
+        private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
+        {
+            for(int i=0;i<VisualTreeHelper.GetChildrenCount(root);i++)
+            {
+                var child=VisualTreeHelper.GetChild(root,i);var match=child as T;
+                if(match!=null)yield return match;
+                foreach(var nested in Descendants<T>(child))yield return nested;
+            }
+        }
+        private static void AssertThemedBar(ProgressBar bar,Brush track,Brush accent)
+        {
+            bar.ApplyTemplate();
+            var trackPart=bar.Template.FindName("PART_Track",bar) as Border;var indicator=bar.Template.FindName("PART_Indicator",bar) as Border;
+            Assert.IsNotNull(trackPart,bar.Name+" must draw a themed track instead of the light system track.");Assert.IsNotNull(indicator,bar.Name);
+            Assert.AreSame(track,trackPart.Background,bar.Name);Assert.AreSame(accent,indicator.Background,bar.Name);
+        }
+
+        [Test]
+        public void OptimizationProgressReplacesTheSummaryAndCountsElapsedTime()
+        {
+            var window=CreateWindow();window.Show();Drain();window.UpdateLayout();
+            var cleaner=(MainViewModel)window.DataContext;var optimize=(Button)window.FindName("Optimize");
+            var panel=window.FindName("OptimizationProgressPanel") as FrameworkElement;var summary=window.FindName("MemorySummary") as FrameworkElement;
+            Assert.IsNotNull(panel,"A running optimization must show its progress, not only a disabled button.");Assert.IsNotNull(summary);
+            var step=(TextBlock)window.FindName("OptimizationStep");var count=(TextBlock)window.FindName("OptimizationCount");
+            var elapsed=(TextBlock)window.FindName("OptimizationElapsed");var bar=(ProgressBar)window.FindName("OptimizationProgressBar");
+            Assert.AreEqual(Visibility.Collapsed,panel.Visibility);Assert.AreEqual(Visibility.Visible,summary.Visibility);
+            double footer=((FrameworkElement)optimize.Parent).ActualHeight;
+            string start=string.Format(Localizer.Culture,window.Monitoring.Labels["OptimizationElapsed"],"0:00");
+            try
+            {
+                cleaner.OptimizationProgressTotal=8;cleaner.OptimizationProgressValue=3;cleaner.OptimizationProgressStep=Localizer.String.WorkingSet;
+                cleaner.IsOptimizationRunning=true;Drain();window.UpdateLayout();
+                Assert.AreEqual(Visibility.Visible,panel.Visibility);Assert.AreEqual(Visibility.Hidden,summary.Visibility,"Hidden keeps the footer height stable.");
+                Assert.AreEqual(Localizer.String.WorkingSet,step.Text);Assert.AreEqual("3 / 8",count.Text);
+                Assert.AreEqual(8.0,bar.Maximum);Assert.AreEqual(3.0,bar.Value);
+                Assert.AreEqual(footer,((FrameworkElement)optimize.Parent).ActualHeight,0.5,"Showing progress must not resize the footer.");
+                Assert.IsTrue(optimize.IsVisible,"The disabled optimize button stays in place.");
+                Assert.AreEqual(start,elapsed.Text);
+                Assert.IsTrue(Until(delegate { return elapsed.Text!=start; },3000),"Elapsed time must advance while the cleaner works.");
+                StringAssert.Contains("0:0",elapsed.Text);
+                cleaner.CompactMode=true;Drain();window.UpdateLayout();
+                Assert.Less(window.ActualHeight,350);Assert.AreEqual(Visibility.Visible,panel.Visibility);Assert.Greater(panel.ActualWidth,200);
+            }
+            finally { cleaner.IsOptimizationRunning=false;cleaner.CompactMode=false;Drain(); }
+            Assert.AreEqual(Visibility.Collapsed,panel.Visibility);Assert.AreEqual(Visibility.Visible,summary.Visibility);
+            var clock=typeof(MainWindow).GetField("_optimizationClock",BindingFlags.Instance|BindingFlags.NonPublic);Assert.IsNotNull(clock);
+            Assert.IsFalse(((DispatcherTimer)clock.GetValue(window)).IsEnabled,"The elapsed clock must stop with the optimization.");
+        }
+
+        [Test]
+        public void ThemedProgressAndSearchUseThePaletteAndShowTheSearchHint()
+        {
+            var window=CreateProcessWindow();ShowProcesses(window);
+            Brush track=Brushes.Gray,accent=Brushes.DeepSkyBlue,surface=Brushes.DimGray;
+            Application.Current.Resources["SecondaryBorder"]=track;Application.Current.Resources["Accent"]=accent;
+            Application.Current.Resources["SecondaryBackground"]=surface;Drain();
+            var search=(TextBox)window.FindName("ProcessSearch");
+            Assert.AreSame(surface,search.Background,"The search box must follow the theme instead of staying a white system box.");
+            Assert.AreSame(track,search.BorderBrush);
+            search.ApplyTemplate();var hint=search.Template.FindName("SearchHint",search) as TextBlock;
+            Assert.IsNotNull(hint,"An empty search box must say what it searches.");
+            Assert.AreEqual(window.Monitoring.Labels["Search"],hint.Text);Assert.AreEqual(Visibility.Visible,hint.Visibility);
+            search.UpdateLayout();var hintAt=hint.TranslatePoint(new Point(0,hint.ActualHeight/2),search);
+            search.Text="game";Drain();Assert.AreEqual(Visibility.Collapsed,hint.Visibility,"Typed text replaces the hint.");
+            search.UpdateLayout();var typed=search.GetRectFromCharacterIndex(0);
+            Assert.AreEqual(typed.Left,hintAt.X,3.0,"The hint must start where typed text starts.");
+            Assert.AreEqual(typed.Top+typed.Height/2,hintAt.Y,3.0,"The hint must be vertically aligned with typed text.");
+            search.Text=string.Empty;Drain();Assert.AreEqual(Visibility.Visible,hint.Visibility);
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo("en"));Drain();
+            Assert.AreEqual("Search name or PID",hint.Text);
+            Select(0);Drain();window.UpdateLayout();
+            var memory=window.FindName("MemoryUsageBar") as ProgressBar;Assert.IsNotNull(memory);
+            AssertThemedBar(memory,track,accent);
+            var cleaner=(MainViewModel)window.DataContext;
+            try
+            {
+                cleaner.IsOptimizationRunning=true;Drain();window.UpdateLayout();
+                AssertThemedBar((ProgressBar)window.FindName("OptimizationProgressBar"),track,accent);
+            }
+            finally { cleaner.IsOptimizationRunning=false;Drain(); }
+        }
+
+        [Test]
+        public void NumericHeadersAlignWithTheirRightAlignedValues()
+        {
+            var window=CreateProcessWindow();ShowProcesses(window);window.UpdateLayout();
+            var headers=Descendants<DataGridColumnHeader>(window).Where(h=>h.Column!=null).ToList();
+            Assert.AreEqual(7,headers.Count,"Every process column fits at the default width.");
+            foreach(var header in headers)
+            {
+                bool numeric=header.Column.DisplayIndex>0;string name=header.Column.Header as string;
+                Assert.AreEqual(numeric?HorizontalAlignment.Right:HorizontalAlignment.Left,header.HorizontalContentAlignment,name);
+                if(!numeric)continue;
+                var content=Descendants<ContentPresenter>(header).FirstOrDefault();Assert.IsNotNull(content,name);
+                double right=content.TranslatePoint(new Point(content.ActualWidth,0),header).X;
+                Assert.AreEqual(header.ActualWidth-header.Padding.Right,right,2.0,name+" must end where its right-aligned values end.");
+            }
+        }
+
+        [Test]
+        public void SettingsGroupsAreThemedCardsLikeTheOverlayCard()
+        {
+            var window=CreateWindow();Brush surface=Brushes.DimGray;Application.Current.Resources["SecondaryBackground"]=surface;
+            Select(2);window.Show();Drain();window.UpdateLayout();
+            var groups=Descendants<GroupBox>((DependencyObject)window.FindName("SettingsHost")).ToList();
+            Assert.AreEqual(6,groups.Count,"All legacy settings groups stay present.");
+            foreach(var group in groups)
+            {
+                string title=group.Header as string;group.ApplyTemplate();
+                var frames=Descendants<Border>(group).Where(b=>b.TemplatedParent==group).ToList();
+                Assert.AreEqual(1,frames.Count,title+" must be one flat card, not the double-line system frame.");
+                Assert.AreSame(surface,frames[0].Background,title);Assert.AreEqual(new Thickness(0),frames[0].BorderThickness,title);
+                if(!group.IsVisible)continue;
+                var header=Descendants<TextBlock>(group).FirstOrDefault(t=>t.Text==title);Assert.IsNotNull(header,title);
+                Assert.AreEqual(18.0,header.FontSize,title);Assert.AreEqual(FontWeights.SemiBold,header.FontWeight,title);
+            }
+        }
+
+        [Test]
+        public void DisplayPickerNamesThePrimaryDefaultAndKeepsAChosenScreen()
+        {
+            var window=CreateWindow();Select(2);window.Show();Drain();window.UpdateLayout();
+            var picker=Descendants<ComboBox>(window).FirstOrDefault(c=>
+            {
+                var binding=BindingOperations.GetBinding(c,ItemsControl.ItemsSourceProperty);
+                return binding!=null&&binding.Path!=null&&binding.Path.Path=="Displays";
+            });
+            Assert.IsNotNull(picker);var initial=picker.SelectedItem as DisplayChoice;
+            string primary=System.Windows.Forms.Screen.PrimaryScreen.DeviceName;
+            window.Monitoring.OverlayScreen=primary;Drain();
+            Assert.AreEqual(primary,SelectedDisplay(picker));Assert.AreEqual(primary,Settings.Monitoring.Screen);
+            window.Monitoring.RefreshDisplays();Drain();string afterRefresh=SelectedDisplay(picker);
+            Assert.AreEqual(primary,Settings.Monitoring.Screen,"Refreshing the list must not save the primary-display default (selection: "+(afterRefresh??"none")+").");
+            Assert.AreEqual(primary,afterRefresh,"Refreshing the drop-down list must keep the chosen display.");
+            window.Monitoring.OverlayScreen=string.Empty;Drain();
+            var choice=picker.SelectedItem as DisplayChoice;
+            Assert.IsNotNull(choice,"The saved primary-display default must be a visible choice, not a blank box.");
+            Assert.AreEqual(string.Empty,choice.Id);Assert.AreEqual(window.Monitoring.Labels["PrimaryDisplay"],choice.Name);
+            Assert.AreSame(initial,choice,"The default is selected from the first frame.");
+            string chinese=choice.Name;
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo("en"));Drain();
+            Assert.AreSame(choice,picker.SelectedItem);Assert.AreEqual("Primary display (default)",choice.Name);
+            Assert.AreNotEqual(chinese,choice.Name);Assert.AreEqual(string.Empty,Settings.Monitoring.Screen);
+            window.Monitoring.RefreshDisplays();Drain();Assert.AreSame(choice,picker.SelectedItem);
+        }
+        private static string SelectedDisplay(ComboBox picker)
+        {
+            var choice=picker.SelectedItem as DisplayChoice;return choice==null?null:choice.Id;
         }
     }
 }

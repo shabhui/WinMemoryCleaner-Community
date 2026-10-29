@@ -28,6 +28,8 @@ namespace WinMemoryCleaner
         private int _page;
         private double _lastExpandedHeight = ExpandedHeight;
         private double _lastExpandedWidth = ExpandedWidth;
+        private DispatcherTimer _optimizationClock;
+        private readonly System.Diagnostics.Stopwatch _optimizationWatch = new System.Diagnostics.Stopwatch();
 
         /// <summary>The shared monitoring presentation used by the shell and overlay.</summary>
         public MonitoringViewModel Monitoring { get; private set; }
@@ -57,6 +59,7 @@ namespace WinMemoryCleaner
             RefreshColumnHeaders();
             SelectPage(0);
             if (Monitoring.OverlayEnabled) { SyncOverlay(); Monitoring.RefreshNow(); }
+            SyncOptimizationClock();
         }
 
         /// <summary>Selects overview (0), processes (1), or settings (2).</summary>
@@ -238,6 +241,7 @@ namespace WinMemoryCleaner
         private void OnMainWindowClosed(object sender, EventArgs e)
         {
             _closed = true;
+            StopOptimizationClock();
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
             _viewModel.OnLanguageChangeCompleted -= OnLanguageChanged;
             _viewModel.OnNavigateUriCommandCompleted -= OnNavigateUriCommandCompleted;
@@ -266,6 +270,45 @@ namespace WinMemoryCleaner
         private void OnViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
         {
             if (e.PropertyName == "CompactMode") ApplyCompactMode(_viewModel.CompactMode);
+            else if (e.PropertyName == "IsOptimizationRunning") QueueOptimizationClock();
+        }
+        // IsOptimizationRunning changes on the optimization worker; the clock lives on the UI thread.
+        private void QueueOptimizationClock()
+        {
+            if (_closed) return;
+            if (Dispatcher.CheckAccess()) { SyncOptimizationClock(); return; }
+            if (Dispatcher.HasShutdownStarted) return;
+            try { Dispatcher.BeginInvoke(new Action(SyncOptimizationClock)); }
+            catch (InvalidOperationException) { } // A closing Dispatcher cannot accept clock work.
+        }
+        private void SyncOptimizationClock()
+        {
+            if (_closed || !_viewModel.IsOptimizationRunning) { StopOptimizationClock(); return; }
+            if (_optimizationClock == null)
+            {
+                _optimizationClock = new DispatcherTimer(DispatcherPriority.Background, Dispatcher) { Interval = TimeSpan.FromMilliseconds(250) };
+                _optimizationClock.Tick += OnOptimizationClockTick;
+            }
+            if (_optimizationClock.IsEnabled) return;
+            _optimizationWatch.Restart();
+            ShowOptimizationElapsed();
+            _optimizationClock.Start();
+        }
+        private void StopOptimizationClock()
+        {
+            if (_optimizationClock != null) _optimizationClock.Stop();
+            _optimizationWatch.Stop();
+        }
+        private void OnOptimizationClockTick(object sender, EventArgs e)
+        {
+            if (_closed || !_viewModel.IsOptimizationRunning) { StopOptimizationClock(); return; }
+            ShowOptimizationElapsed();
+        }
+        private void ShowOptimizationElapsed()
+        {
+            long seconds = (long)_optimizationWatch.Elapsed.TotalSeconds;
+            string time = (seconds / 60).ToString(System.Globalization.CultureInfo.InvariantCulture) + ":" + (seconds % 60).ToString("00", System.Globalization.CultureInfo.InvariantCulture);
+            OptimizationElapsed.Text = string.Format(Localizer.Culture, Monitoring.Labels["OptimizationElapsed"], time);
         }
         private void OnLocalizerChanged(object sender, PropertyChangedEventArgs e)
         {

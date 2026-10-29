@@ -44,6 +44,43 @@
     <Style x:Key="ProcessCell" TargetType="TextBlock"><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Padding" Value="8,0"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style>
     <Style x:Key="ProcessNumber" TargetType="TextBlock" BasedOn="{StaticResource ProcessCell}"><Setter Property="TextAlignment" Value="Right"/></Style>
     <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{DynamicResource SecondaryBackground}"/><Setter Property="Foreground" Value="{DynamicResource SecondaryDisabled}"/><Setter Property="Padding" Value="8,10"/><Setter Property="BorderBrush" Value="{DynamicResource PrimaryBorder}"/><Setter Property="BorderThickness" Value="0,0,0,1"/></Style>
+    <!-- Numeric headers end where their right-aligned values end (both use 8px right padding). -->
+    <Style x:Key="NumericColumnHeader" TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="HorizontalContentAlignment" Value="Right"/></Style>
+    <!-- Themed track: the system ProgressBar track is near-white and was the brightest element in the dark theme. -->
+    <Style x:Key="MonitorProgress" TargetType="ProgressBar">
+        <Setter Property="Foreground" Value="{DynamicResource Accent}"/><Setter Property="Background" Value="{DynamicResource SecondaryBorder}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ProgressBar">
+            <Grid>
+                <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="3"/>
+                <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}" CornerRadius="3" HorizontalAlignment="Left"/>
+            </Grid>
+        </ControlTemplate></Setter.Value></Setter>
+    </Style>
+    <!-- Themed search box; the hint repeats the box's accessible name until the user types. -->
+    <Style x:Key="MonitorSearchBox" TargetType="TextBox">
+        <Setter Property="Foreground" Value="{DynamicResource SecondaryForeground}"/><Setter Property="Background" Value="{DynamicResource SecondaryBackground}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource SecondaryBorder}"/><Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CaretBrush" Value="{DynamicResource SecondaryForeground}"/><Setter Property="SelectionBrush" Value="{DynamicResource Accent}"/>
+        <Setter Property="Padding" Value="8,4"/><Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
+            <Border x:Name="SearchBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="3" SnapsToDevicePixels="True">
+                <Grid>
+                    <ScrollViewer x:Name="PART_ContentHost" Focusable="False" HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+                    <TextBlock x:Name="SearchHint" Text="{Binding Path=(AutomationProperties.Name), RelativeSource={RelativeSource TemplatedParent}}" Margin="{TemplateBinding Padding}"
+                        VerticalAlignment="{TemplateBinding VerticalContentAlignment}" Foreground="{DynamicResource SecondaryDisabled}" FontFamily="{TemplateBinding FontFamily}" FontSize="{TemplateBinding FontSize}"
+                        FontWeight="{TemplateBinding FontWeight}" TextTrimming="CharacterEllipsis" IsHitTestVisible="False" Visibility="Collapsed"/>
+                </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="Text" Value=""><Setter TargetName="SearchHint" Property="Visibility" Value="Visible"/></Trigger>
+                <Trigger Property="Text" Value="{x:Null}"><Setter TargetName="SearchHint" Property="Visibility" Value="Visible"/></Trigger>
+                <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="SearchBorder" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+                <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="SearchBorder" Property="BorderBrush" Value="{DynamicResource Accent}"/></Trigger>
+                <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate></Setter.Value></Setter>
+    </Style>
     <Style TargetType="DataGridCell"><Setter Property="BorderThickness" Value="0"/><Setter Property="Foreground" Value="{DynamicResource SecondaryForeground}"/><Style.Triggers><Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource Accent}"/><Setter Property="Foreground" Value="Black"/></Trigger></Style.Triggers></Style>
     <Style TargetType="DataGridRow"><Setter Property="Background" Value="{DynamicResource PrimaryBackground}"/><Setter Property="MinHeight" Value="32"/></Style>
 </ResourceDictionary>

@@ -2,7 +2,19 @@
     <UserControl.Resources>
         <DataTemplate x:Key="SettingCheck"><CheckBox Content="{Binding Name}" IsChecked="{Binding Value, Mode=TwoWay}" IsEnabled="{Binding IsEnabled}" Margin="0,0,0,9"/></DataTemplate>
         <DataTemplate x:Key="ColorChoice"><StackPanel Orientation="Horizontal"><Rectangle Fill="{Binding}" Width="14" Height="14" Margin="0,0,6,0"/><TextBlock Text="{Binding Converter={StaticResource BrushToHexConverter}}"/></StackPanel></DataTemplate>
-        <Style x:Key="SettingsGroup" TargetType="GroupBox"><Setter Property="Foreground" Value="{DynamicResource SecondaryForeground}"/><Setter Property="BorderBrush" Value="{DynamicResource PrimaryBorder}"/><Setter Property="Padding" Value="16"/><Setter Property="Margin" Value="0,0,0,16"/></Style>
+        <!-- Flat card matching the overlay settings card (MonitorPanel); the system GroupBox frame is a hard-coded white double line. -->
+        <Style x:Key="SettingsGroup" TargetType="GroupBox">
+            <Setter Property="Foreground" Value="{DynamicResource SecondaryForeground}"/><Setter Property="Background" Value="{DynamicResource SecondaryBackground}"/>
+            <Setter Property="Padding" Value="20"/><Setter Property="Margin" Value="0,0,0,16"/>
+            <Setter Property="HeaderTemplate"><Setter.Value><DataTemplate>
+                <TextBlock Text="{Binding}" Foreground="{DynamicResource SecondaryForeground}" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,14"/>
+            </DataTemplate></Setter.Value></Setter>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="GroupBox">
+                <Border Background="{TemplateBinding Background}" BorderThickness="0" CornerRadius="6" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                    <StackPanel><ContentPresenter ContentSource="Header"/><ContentPresenter/></StackPanel>
+                </Border>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
     </UserControl.Resources>
     <StackPanel>
         <GroupBox Header="{Binding Monitoring.Labels[Appearance], RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}" Style="{StaticResource SettingsGroup}">
