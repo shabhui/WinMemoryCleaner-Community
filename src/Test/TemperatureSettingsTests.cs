@@ -17,6 +17,7 @@ namespace WinMemoryCleaner.Test
         private sealed class Monitor : IResourceMonitor,ITemperatureConfiguration
         {
             internal int Samples,Resets,Disposals;
+            internal string BackendStatus="Running";
             internal volatile bool Requested;
             public ResourceSnapshot Sample(bool processes,bool temperatures)
             {
@@ -25,7 +26,7 @@ namespace WinMemoryCleaner.Test
                 {
                     CpuTemperature=temperatures&&Requested?MetricValue.Available(54,"Fixture CPU package"):MetricValue.Missing(MetricStatus.Disabled,"not requested"),
                     GpuTemperature=MetricValue.Missing(MetricStatus.Unsupported,"Fixture GPU core is unavailable"),
-                    SensorBackendStatus="Running",SensorDriverStatus="KeepExistingDriver",SensorDiagnostic="Fixture backend diagnostic"
+                    SensorBackendStatus=BackendStatus,SensorDriverStatus="KeepExistingDriver",SensorDiagnostic="Fixture backend diagnostic"
                 };
             }
             public void ConfigureTemperatures(int seconds) { }
@@ -45,8 +46,11 @@ namespace WinMemoryCleaner.Test
             internal int MonitorCreations,InstallerCreations,Prepares,Executions;
             internal Action Completed;
             internal SensorDriverInstaller Installer;
+            internal string SelectedInstallerPath;
             private bool _disposed;
             internal Context(Func<string,int> execute)
+                : this(execute,null) { }
+            internal Context(Func<string,int> execute,Action<CancellationToken> prepare)
             {
                 Assert.IsTrue(App.IsTestBuild);
                 Settings.Reset(true);Settings.UseHotkey=false;
@@ -61,7 +65,7 @@ namespace WinMemoryCleaner.Test
                         Interlocked.Increment(ref InstallerCreations);Completed=completed;
                         Installer=new SensorDriverInstaller(
                             delegate { return new SensorDriverState(false,false,null,"NotInstalled"); },
-                            delegate { Interlocked.Increment(ref Prepares);Directory.CreateDirectory(_root);return new SensorPayloadLease(_root); },
+                            delegate(string path,CancellationToken cancellation) { SelectedInstallerPath=path;Interlocked.Increment(ref Prepares);if(prepare!=null)prepare(cancellation);Directory.CreateDirectory(_root);return new SensorPayloadLease(_root); },
                             delegate { return true; },
                             delegate(string path) { Interlocked.Increment(ref Executions);return execute(path); },completed);
                         return Installer;
@@ -71,6 +75,7 @@ namespace WinMemoryCleaner.Test
             {
                 if(_disposed)return;_disposed=true;
                 Model.Dispose();_cleaner.Dispose();_hotkey.Dispose();_notifications.Dispose();
+                Assert.IsTrue(Until(delegate { return Installer==null||!Installer.IsInstalling; },5000),"Owned installer substitute must finish before cleanup.");
                 if(MonitorCreations==0)Monitor.Dispose();
                 else Assert.IsTrue(Until(delegate { return Monitor.Disposals==1; },2000),"The model must release its transferred monitor exactly once");
                 if(Directory.Exists(_root))Directory.Delete(_root,true);
@@ -94,6 +99,7 @@ namespace WinMemoryCleaner.Test
             using(var context=new Context(delegate { Assert.Fail("No installer substitute should execute");return 0; }))
             {
                 Assert.IsFalse(context.Model.BeginDriverInstallation(false));
+                Assert.IsFalse(context.Model.BeginDriverInstallation(false,"unused-offline.exe"));
                 Assert.AreEqual(0,context.InstallerCreations);Assert.AreEqual(0,context.Prepares);Assert.AreEqual(0,context.Executions);Assert.AreEqual(0,context.MonitorCreations);
                 context.Model.Dispose();Assert.IsFalse(context.Model.BeginDriverInstallation(true));Assert.IsFalse(context.Model.CanInstallDriver);
                 Assert.AreEqual(0,context.InstallerCreations);Assert.AreEqual(0,context.MonitorCreations);
@@ -115,10 +121,24 @@ namespace WinMemoryCleaner.Test
                     Localizer.Language=new Language(CultureInfo.GetCultureInfo(culture));
                     StringAssert.Contains("Universal temperature: Running",context.Model.TemperatureStatusText);
                     StringAssert.Contains("Existing shared driver kept",context.Model.TemperatureStatusText);
-                    Assert.AreEqual("Install temperature driver…",context.Model.Labels["InstallSensorDriver"]);
+                    Assert.AreEqual("Install PawnIO driver…",context.Model.Labels["InstallSensorDriver"]);
+                    foreach(string key in new[]{"SelectSensorInstaller","CancelSensorPreparation","SensorPreparingInstaller","DownloadSensorInstallerNote","LocalSensorInstallerNote"})Assert.AreNotEqual(key,context.Model.Labels[key]);
                 }
                 context.Model.SetViewState(false,false);Assert.IsFalse(context.Monitor.Requested);
                 StringAssert.Contains("Not requested",context.Model.TemperatureStatusText);Assert.AreEqual("—",context.Model.OverlayCpuTemperatureText);
+            }
+        }
+        [TestCase("zh-Hans","NotNeeded","无需通用后端")][TestCase("zh-Hans","WaitingForDriver","等待可信 CPU 驱动")]
+        [TestCase("en","NotNeeded","Not needed")][TestCase("en","WaitingForDriver","Waiting for trusted CPU driver")]
+        [TestCase("de","NotNeeded","Not needed")][TestCase("de","WaitingForDriver","Waiting for trusted CPU driver")]
+        public void OnDemandBackendStatesAreLocalizedInActualStatusText(string culture,string status,string expected)
+        {
+            using(var context=new Context(delegate { return 0; }))
+            {
+                context.Monitor.BackendStatus=status;Localizer.Language=new Language(CultureInfo.GetCultureInfo(culture));
+                context.Model.SetViewState(true,false);
+                Assert.IsTrue(Until(delegate { return context.Model.TemperatureStatusText.Contains(expected); },2000));
+                Assert.AreEqual(expected,context.Model.Labels["Sensor"+status]);Assert.AreEqual(0,context.InstallerCreations);
             }
         }
         [Test]
@@ -155,6 +175,30 @@ namespace WinMemoryCleaner.Test
                 context.Model.Dispose();context.Completed();
                 Assert.IsTrue(Until(delegate { return context.Monitor.Disposals==1; },2000));
                 Assert.IsFalse(context.Monitor.Requested);Assert.AreEqual(0,context.Monitor.Resets);Assert.IsFalse(context.Model.CanInstallDriver);
+            }
+        }
+        [Test]
+        public void LocalInstallerPathIsForwardedWithoutStartingMonitoring()
+        {
+            using(var context=new Context(delegate { return 0; }))
+            {
+                string path=Path.Combine(Environment.GetEnvironmentVariable("PI_SCRATCH_DIR")??TestContext.CurrentContext.WorkDirectory,"chosen-offline.exe");
+                Assert.IsTrue(context.Model.BeginDriverInstallation(true,path));Assert.IsTrue(Until(delegate { return !context.Model.IsInstallingDriver; },2000));
+                Assert.AreEqual(path,context.SelectedInstallerPath);Assert.AreEqual(1,context.Prepares);Assert.AreEqual(1,context.Executions);Assert.AreEqual(0,context.MonitorCreations);
+            }
+        }
+        [TestCase(false)]
+        [TestCase(true)]
+        public void CancelOrDisposeDuringPreparationPreventsExecution(bool dispose)
+        {
+            using(var entered=new ManualResetEvent(false))
+            using(var context=new Context(delegate { Assert.Fail("Cancelled preparation must never execute.");return 0; },delegate(CancellationToken cancellation)
+            { entered.Set();if(!cancellation.WaitHandle.WaitOne(5000))throw new TimeoutException();cancellation.ThrowIfCancellationRequested(); }))
+            {
+                Assert.IsTrue(context.Model.BeginDriverInstallation(true));Assert.IsTrue(entered.WaitOne(2000));Assert.IsTrue(context.Model.CanCancelDriverPreparation);
+                if(dispose)context.Model.Dispose();else Assert.IsTrue(context.Model.CancelDriverPreparation());
+                Assert.IsTrue(Until(delegate { return !context.Model.IsInstallingDriver; },2000));Assert.IsFalse(context.Model.CanCancelDriverPreparation);
+                Assert.AreEqual("Cancelled",context.Installer.Status);Assert.AreEqual(0,context.Executions);Assert.AreEqual(0,context.Monitor.Resets);
             }
         }
     }

@@ -19,7 +19,7 @@ namespace WinMemoryCleaner.Test
         private const string ManifestResource = "WinMemoryCleaner.Sensors.Payload.manifest.json";
         private static readonly string[] Required =
         {
-            "WinMemoryCleaner.Sensors.exe", "WinMemoryCleaner.Sensors.exe.config", "LibreHardwareMonitorLib.dll", "PawnIO_setup.exe",
+            "WinMemoryCleaner.Sensors.exe", "WinMemoryCleaner.Sensors.exe.config", "LibreHardwareMonitorLib.dll",
             "sensors-dependencies.lock.json", "sensors-build-info.json", "THIRD-PARTY-NOTICES.md",
             "MPL-2.0.txt", "HidSharp-LICENSE.txt", "DotNET-MIT.txt", "PawnIO-COPYING.txt", "PawnIO-LGPL-2.1.txt", "PawnIO-Linking-Exception.txt"
         };
@@ -77,7 +77,7 @@ namespace WinMemoryCleaner.Test
                 }
                 Dictionary<string, object> lockFile = Object(new JavaScriptSerializer().DeserializeObject(File.ReadAllText(Path.Combine(lease.Directory, "sensors-dependencies.lock.json"))));
                 Assert.AreEqual(SensorProtocol.PayloadVersion, lockFile["payload"]);
-                Assert.AreEqual(12, ((object[])lockFile["assets"]).Length);
+                Assert.AreEqual(11, ((object[])lockFile["assets"]).Length);
                 foreach (object asset in (object[])lockFile["assets"])
                 {
                     Dictionary<string, object> pinned = Object(asset);
@@ -86,12 +86,17 @@ namespace WinMemoryCleaner.Test
                     Assert.AreEqual((string)pinned["sha256"], Object(expected[name])["sha256"], name);
                 }
                 Dictionary<string, object> installer = Object(lockFile["installer"]);
-                Assert.AreEqual((string)installer["sha256"], Object(expected[(string)installer["name"]])["sha256"], "PawnIO_setup.exe");
-                Assert.AreEqual(3225016, Convert.ToInt64(Object(expected["PawnIO_setup.exe"])["length"], CultureInfo.InvariantCulture));
+                Assert.AreEqual(SensorInstallerPackage.InstallerHash, (string)installer["sha256"]);
+                Assert.AreEqual(SensorInstallerPackage.InstallerBytes, Convert.ToInt64(installer["bytes"], CultureInfo.InvariantCulture));
+                Assert.AreEqual(SensorInstallerPackage.DownloadUrl, (string)installer["url"]);
+                Assert.IsFalse(expected.ContainsKey((string)installer["name"]));
+                Assert.AreEqual("DiskInfoToolkit.dll",Object(((object[])lockFile["excludedAssets"])[0])["name"]);
                 Dictionary<string, object> buildInfo = Object(new JavaScriptSerializer().DeserializeObject(File.ReadAllText(Path.Combine(lease.Directory, "sensors-build-info.json"))));
                 Assert.AreEqual(SensorProtocol.PayloadVersion, buildInfo["payloadVersion"]);
                 Assert.AreEqual(9, ((object[])buildInfo["analyzers"]).Length);
                 Assert.Greater(((object[])buildInfo["sources"]).Length, 10);
+                Assert.AreEqual("confirmed-download-or-local-file",buildInfo["installerDelivery"]);
+                Assert.AreEqual(11,((object[])buildInfo["runtimeLibraries"]).Length);
                 Dictionary<string, object> ruleset = Object(buildInfo["ruleset"]);
                 Assert.AreEqual(64, ((string)ruleset["sha256"]).Length);
                 AssemblyName backend = AssemblyName.GetAssemblyName(lease.Executable);
@@ -107,7 +112,14 @@ namespace WinMemoryCleaner.Test
             Assert.Contains(ManifestResource, names);
             int count = 0;
             foreach (string name in names) if (name.StartsWith("WinMemoryCleaner.Sensors.Payload.", StringComparison.Ordinal)) count++;
-            Assert.AreEqual(25, count);
+            Assert.AreEqual(23, count);
+        }
+        [Test]
+        public void OptionalInstallerAndStorageLibraryAreNotEmbedded()
+        {
+            var names=new List<string>(Assembly.GetExecutingAssembly().GetManifestResourceNames());
+            Assert.IsFalse(names.Contains("WinMemoryCleaner.Sensors.Payload.PawnIO_setup.exe.gz"));
+            Assert.IsFalse(names.Contains("WinMemoryCleaner.Sensors.Payload.DiskInfoToolkit.dll.gz"));
         }
     }
 }

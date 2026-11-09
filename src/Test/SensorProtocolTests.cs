@@ -43,7 +43,7 @@ namespace WinMemoryCleaner.Test
         }
         [TestCase("\"protocol\":1","\"protocol\":2")]
         [TestCase("\"protocol\":1","\"protocol\":\"1\"")]
-        [TestCase("lhm-0.9.6-p1","unknown")]
+        [TestCase(SensorProtocol.PayloadVersion,"unknown")]
         [TestCase("123456789012345678901234567890ab","other-session")]
         [TestCase("\"sequence\":1","\"sequence\":1.5")]
         public void IncompatibleOrMistypedEnvelopeTerminatesFrame(string before,string after)

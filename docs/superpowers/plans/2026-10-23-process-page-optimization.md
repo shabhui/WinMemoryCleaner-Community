@@ -20,7 +20,7 @@
 - 保留名称与 PID 的包含匹配、名称不区分大小写、忽略查询首尾空格、现有排序方向及不可用值排在真实零之后的规则。
 - 合并静止期为 **150 ms**；500/2000 行的分场景 UI 快照应用、输入处理和实际查询提交处理 **p95 ≤50 ms**；静止期单独计时。
 - 不新增依赖、不升级框架、不调整温度检测/信任、不改发布工作流、不提高版本号或发布新版本，不重复已完成的温度性能活动。
-- 不覆盖 `D:\下载\WinMemoryCleaner.Community.exe`，不改真实 cleaner HKLM/启动任务，不结束用户实例，不安装、替换、降级或卸载共享 PawnIO。
+- 不覆盖用户使用的 EXE，不改真实 cleaner HKLM/启动任务，不结束用户实例，不安装、替换、降级或卸载共享 PawnIO。
 - 所有操作测试用替身或取消确认；输出和临时工具放本 session scratch，保留失败/中断证据，产品与测试构建身份分别记录。
 
 ## Review Focus
@@ -56,7 +56,7 @@
 在 Windows PowerShell 中使用以下函数，保持输出目录/报告按唯一 label 分开；每次新 label 不覆盖先前失败记录。
 
 ```powershell
-$R='G:\AI项目\WinMemoryCleaner-main\WinMemoryCleaner-Community'
+$R=(Get-Location).Path # 从仓库根目录运行
 $S=$env:PI_SCRATCH_DIR
 $N=Join-Path $S 'wmc-goal\nunit\nunit-console.exe'
 $B=Join-Path $S 'InvokeStrictProcessBuild.ps1'
@@ -77,7 +77,7 @@ function Cases([string]$Label,[string]$Fixtures='') {
 
 Build helper明确加载全部九个 analyzer、原 ruleset、net40 reference assemblies 和 C#4；这是严格本地开发构建，不称作 canonical release。执行前 `Test-Path` 核对 helper、compiler、runner 和全部 analyzer；缺失则报告实际问题，不降低检查要求。
 
-Git 一律加 `-c safe.directory=G:/AI项目/WinMemoryCleaner-main/WinMemoryCleaner-Community -C $R`；每次提交只暂存本任务文件，并先运行 `diff --cached --check`。
+Git 从仓库根目录执行，或使用 `git -C $R`；每次提交只暂存本任务文件，并先运行 `diff --cached --check`。
 
 ### Task 1: Independent state and batch-aware process table
 

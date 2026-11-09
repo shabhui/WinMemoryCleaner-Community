@@ -3,6 +3,8 @@
 本文件记录社区分支 `community` 对上游 [IgorMundstein/WinMemoryCleaner](https://github.com/IgorMundstein/WinMemoryCleaner) 开放条目的处置状态与依据。
 数据来自一次本地整理的 GitHub REST API 快照（issues / pull requests / releases）以及本地 git 历史。
 
+> **历史范围**：以下条目描述整理快照时的分支状态，不是当前发布说明。其中“仅本地”“未配置更新通道”等说法仅适用于当时；当前下载、更新与构建方式见 [README.md](README.md)，后续版本记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 > **阅读前提**：本文件**不声称**任何已挂起问题被"完全解决"。除状态写作**接纳**的条目外，其余条目只是被部分覆盖、被答复、需澄清或需复现。表内"覆盖"仅指某条已知路径被改动覆盖，不等于整条 Issue 关闭。
 
 ---

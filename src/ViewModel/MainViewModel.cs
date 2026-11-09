@@ -24,7 +24,8 @@ namespace WinMemoryCleaner
         private readonly IComputerService _computerService;
         private readonly IHotkeyService _hotKeyService;
         private bool _isOptimizationKeyValid;
-        private bool _isOptimizationRunning;
+        private volatile bool _isOptimizationRunning;
+        private readonly OptimizationRequestGate _optimizationRequest = new OptimizationRequestGate();
         private bool _isReiniziliating;
         private DateTimeOffset _lastAutoOptimizationByInterval = DateTimeOffset.Now;
         private DateTimeOffset _lastAutoOptimizationByMemoryUsage = DateTimeOffset.Now;
@@ -482,9 +483,20 @@ namespace WinMemoryCleaner
             get { return _isOptimizationRunning; }
             set
             {
+                if (_isOptimizationRunning == value) return;
                 _isOptimizationRunning = value;
-                RaisePropertyChanged();
+                RaisePropertyChanged("IsOptimizationRunning");
+                RaisePropertyChanged("CanOptimize");
+                InvalidateOptimizationCommand();
             }
+        }
+
+        private static void InvalidateOptimizationCommand()
+        {
+            var app = WpfApplication.Current;
+            if (app == null || app.Dispatcher.HasShutdownStarted) return;
+            try { app.Dispatcher.BeginInvoke(new Action(CommandManager.InvalidateRequerySuggested)); }
+            catch (InvalidOperationException) { } // The dispatcher may have closed after the check.
         }
 
         /// <summary>
@@ -667,7 +679,8 @@ namespace WinMemoryCleaner
                     Settings.Save();
 
                     RaisePropertyChanged();
-                    RaisePropertyChanged(() => CanOptimize);
+                    RaisePropertyChanged("CanOptimize");
+                    InvalidateOptimizationCommand();
                     RaisePropertyChanged(() => MemoryAreaItems);
                 }
                 finally
@@ -892,6 +905,21 @@ namespace WinMemoryCleaner
         public void SetMemoryRefreshInterval(int seconds)
         {
             _memoryRefreshSeconds = MonitoringPolicy.NormalizeRefresh(seconds);
+        }
+
+        internal void SetMemoryDisplayActive(bool active)
+        {
+            if (!Computer.SetMemoryNotificationsEnabled(active) || !active) return;
+            RaisePropertyChanged("PhysicalMemoryHeader");
+            RaisePropertyChanged("VirtualMemoryHeader");
+        }
+
+        private void PublishMemory(Memory memory)
+        {
+            Computer.Memory = memory;
+            if (!Computer.MemoryNotificationsEnabled) return;
+            RaisePropertyChanged("PhysicalMemoryHeader");
+            RaisePropertyChanged("VirtualMemoryHeader");
         }
 
         /// <summary>
@@ -1789,10 +1817,7 @@ namespace WinMemoryCleaner
                         lock (_lockObject)
                         {
                             // Update memory info
-                            Computer.Memory = _computerService.Memory;
-
-                            RaisePropertyChanged(() => PhysicalMemoryHeader);
-                            RaisePropertyChanged(() => VirtualMemoryHeader);
+                            PublishMemory(_computerService.Memory);
 
                             NotificationService.Update(Computer.Memory, IsOptimizationRunning);
                         }
@@ -1846,9 +1871,7 @@ namespace WinMemoryCleaner
                     _computerService.Optimize(reason, Settings.MemoryAreas);
 
                     // Update memory info
-                    Computer.Memory = _computerService.Memory;
-                    RaisePropertyChanged(() => PhysicalMemoryHeader);
-                    RaisePropertyChanged(() => VirtualMemoryHeader);
+                    PublishMemory(_computerService.Memory);
 
                     // Notification
                     if (Settings.ShowOptimizationNotifications)
@@ -1896,20 +1919,25 @@ namespace WinMemoryCleaner
         /// <param name="reason">Optimization reason</param>
         private void OptimizeAsync(Enums.Memory.Optimization.Reason reason)
         {
+            if (IsOptimizationRunning || !_optimizationRequest.TryEnter()) return;
+            bool queued = false;
             try
             {
-                if (IsOptimizationRunning)
-                    return;
-
                 OptimizationProgressStep = Localizer.String.Optimize;
                 OptimizationProgressValue = 0;
                 OptimizationProgressTotal = (byte)(new BitArray(new[] { (int)Settings.MemoryAreas }).OfType<bool>().Count(x => x) + 1);
-
-                ThreadPool.QueueUserWorkItem(_ => Optimize(reason));
+                IsOptimizationRunning = true;
+                queued = ThreadPool.QueueUserWorkItem(delegate
+                {
+                    try { Optimize(reason); }
+                    catch (Exception error) { Logger.Error(error); }
+                    finally { _optimizationRequest.Exit(); }
+                });
             }
-            catch (Exception e)
+            catch (Exception e) { Logger.Error(e); }
+            finally
             {
-                Logger.Error(e);
+                if (!queued) { IsOptimizationRunning = false; _optimizationRequest.Exit(); }
             }
         }
 

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "payload": "lhm-0.9.6-p1",
+  "payload": "lhm-0.9.6-p3",
   "frameworkProvided": ["System.Management", "System.CodeDom"],
   "packages": [
     {"id":"blacksharp.core","version":"1.0.7","key":"blacksharp.core.1.0.7","bytes":167241,"sha256":"4f713fe18ee7c85a7c49f28309adaa815714333326aa81fd4d4a81619ecaa0ab","sha512":"t5Uaq3W6g33q+Pmmjp/zjCU/4v+aUMfOdkdtE56tsfruxEw18+F/1n04TSe0AjMbIln30tT4g5uSx1igGjMXXg=="},
@@ -22,7 +22,6 @@
   ],
   "assets": [
     {"package":"librehardwaremonitorlib.0.9.6","path":"runtimes/win-x64/lib/net472/LibreHardwareMonitorLib.dll","name":"LibreHardwareMonitorLib.dll","assemblyVersion":"0.9.6.0","bytes":1203200,"sha256":"6ebc194316536ba61af5be24508ad9fcbb2ecc685e716c12e787c79530f66bf0"},
-    {"package":"diskinfotoolkit.1.1.2","path":"lib/net472/DiskInfoToolkit.dll","name":"DiskInfoToolkit.dll","assemblyVersion":"1.1.2.0","bytes":903680,"sha256":"1acbf51b3c10c51c986cf43021680d34a2e38d9a5ba652bcfa9a1b5f7fc09800"},
     {"package":"blacksharp.core.1.0.7","path":"lib/net472/BlackSharp.Core.dll","name":"BlackSharp.Core.dll","assemblyVersion":"1.0.7.0","bytes":32768,"sha256":"cafb93afcc8d8a367e21f619673d05c06887d8964867fed1371f02ded1cd3e23"},
     {"package":"ramspdtoolkit-ndd.1.4.2","path":"lib/net472/RAMSPDToolkit-NDD.dll","name":"RAMSPDToolkit-NDD.dll","assemblyVersion":"1.4.2.0","bytes":233472,"sha256":"b6882354c7c8ec186617e421507743dbfae09c5c1fc24cef76a1d0c0c26651de"},
     {"package":"hidsharp.2.6.4","path":"lib/netstandard2.0/HidSharp.dll","name":"HidSharp.dll","assemblyVersion":"2.6.4.0","bytes":239616,"sha256":"79f2bc8ddff102e6dbede84b2c211a3aea2ed675bf762fa0f02ecb65f61ee812"},
@@ -34,6 +33,9 @@
     {"package":"system.security.accesscontrol.6.0.0","path":"lib/net461/System.Security.AccessControl.dll","name":"System.Security.AccessControl.dll","assemblyVersion":"6.0.0.0","bytes":35952,"sha256":"ff14c5f628b9a6798d173aefbba0a43d61e66f715108e2576ac0d3dfab9071d0"},
     {"package":"system.security.principal.windows.5.0.0","path":"lib/net461/System.Security.Principal.Windows.dll","name":"System.Security.Principal.Windows.dll","assemblyVersion":"5.0.0.0","bytes":18312,"sha256":"b4d8e15adc235d0e858e39b5133e5d00a4baa8c94f4f39e3b5e791b0f9c0c806"}
   ],
+  "excludedAssets": [
+    {"package":"diskinfotoolkit.1.1.2","path":"lib/net472/DiskInfoToolkit.dll","name":"DiskInfoToolkit.dll","assemblyVersion":"1.1.2.0","bytes":903680,"sha256":"1acbf51b3c10c51c986cf43021680d34a2e38d9a5ba652bcfa9a1b5f7fc09800","reason":"Storage-only dependency; the pinned CPU/GPU temperature profile never enables storage."}
+  ],
   "licenses": [
     {"name":"MPL-2.0.txt","url":"https://raw.githubusercontent.com/LibreHardwareMonitor/LibreHardwareMonitor/3d331e3370efb858411f19511373eff65a218701/LICENSE","cache":"upstream/LHM-LICENSE.txt","bytes":16725,"sha256":"1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"},
     {"name":"HidSharp-LICENSE.txt","package":"hidsharp.2.6.4","path":"LICENSE.txt","bytes":10784,"sha256":"b065e07179f06490c96bf946e73f821086b2f29efde395f092aea69a907eae16"},
@@ -42,5 +44,5 @@
     {"name":"PawnIO-LGPL-2.1.txt","url":"https://raw.githubusercontent.com/namazso/PawnIO.Modules/e12a858d952461ee2e919897cacbff7f905fe370/COPYING","cache":"source-license/modules-0.2.2-COPYING","bytes":26530,"sha256":"dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"},
     {"name":"PawnIO-Linking-Exception.txt","url":"https://raw.githubusercontent.com/namazso/PawnIO/e1043d7750f501b6b0d3ac0a71bd5b9406cd17b6/README.md","cache":"upstream/PawnIO-README.md","bytes":2556,"sha256":"80ff9b48b780c0d4d116c93707974e960a577d5b71a76a17cafe05b0b2f143c8"}
   ],
-  "installer": {"name":"PawnIO_setup.exe","version":"2.1.0.0","url":"https://api.github.com/repos/LibreHardwareMonitor/LibreHardwareMonitor/git/blobs/e5d7ecd7e61d317bd8de961cead52be576be5be2","gitBlob":"e5d7ecd7e61d317bd8de961cead52be576be5be2","bytes":3225016,"sha256":"a3a46226c5e2824f4cdd42be0eecbabfc672c86f7889710f5ab1e6ad385b47a0","signerThumbprint":"F380DCC9F706E2756A5047B832FFE719E1BC35F5","standardDriverSha256":"f92de04e5a02256e86ffa1b4252fe669282198b7329227f40e51bca9267d133d"}
+  "installer": {"name":"PawnIO_setup.exe","version":"2.2.0.0","url":"https://github.com/namazso/PawnIO.Setup/releases/download/2.2.0/PawnIO_setup.exe","releaseAssetId":374375077,"bytes":3410960,"sha256":"1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032","signerThumbprint":"F380DCC9F706E2756A5047B832FFE719E1BC35F5","standardDriverSha256":"fca6e7d58b0cf38dbb913a2b9e532f48629145d395f454b16a9f58e97b8d3940"}
 }

@@ -20,6 +20,7 @@ internal static class SensorBackendChild
         string mode=File.ReadAllText("mode.txt");
         var config=Json.DeserializeObject(input.ReadLine()) as Dictionary<string,object>;
         if(config==null)return 2;
+        if(mode.StartsWith("config-marker:",StringComparison.Ordinal))File.WriteAllText(mode.Substring(14),Json.Serialize(config));
         string session=(string)config["session"];
         using(var output=new StreamWriter(Console.OpenStandardOutput(),new UTF8Encoding(false),4096) { AutoFlush=true })
         {
@@ -56,14 +57,18 @@ internal static class SensorBackendChild
         return 0;
     }
     private static Dictionary<string,object> Base(string kind,string session)
-    { return new Dictionary<string,object> { {"kind",kind},{"protocol",1},{"payload","lhm-0.9.6-p1"},{"session",session} }; }
+    { return new Dictionary<string,object> { {"kind",kind},{"protocol",1},{"payload","lhm-0.9.6-p3"},{"session",session} }; }
     private static void Snapshot(TextWriter output,Dictionary<string,object> config,long sequence,bool future)
     {
         var frame=Base("snapshot",(string)config["session"]);
         frame.Add("sequence",sequence);frame.Add("utc",DateTime.UtcNow.AddSeconds(future?6:0).ToString("o",CultureInfo.InvariantCulture));
-        frame.Add("cpuStatus","Unsupported");frame.Add("gpuStatus","Available");frame.Add("detail","Controlled backend");
-        frame.Add("readings",new[] { new Dictionary<string,object> { {"hardwareId","/gpu/0"},{"hardwareType","GpuNvidia"},{"device","Controlled GPU"},
-            {"sensorId","/gpu/0/temperature/0"},{"sensor","GPU Core"},{"sensorType","Temperature"},{"measurement","GpuCore"},{"celsius",40+(int)config["refresh"]} } });
+        bool cpu=(bool)config["cpuEnabled"];
+        frame.Add("cpuStatus",cpu?"Available":"Disabled");frame.Add("gpuStatus","Available");frame.Add("detail","Controlled backend");
+        var readings=new List<Dictionary<string,object>> { new Dictionary<string,object> { {"hardwareId","/gpu/0"},{"hardwareType","GpuNvidia"},{"device","Controlled GPU"},
+            {"sensorId","/gpu/0/temperature/0"},{"sensor","GPU Core"},{"sensorType","Temperature"},{"measurement","GpuCore"},{"celsius",40+(int)config["refresh"]} } };
+        if(cpu)readings.Add(new Dictionary<string,object> { {"hardwareId","/cpu/0"},{"hardwareType","Cpu"},{"device","Controlled CPU"},
+            {"sensorId","/cpu/0/temperature/0"},{"sensor","CPU Package"},{"sensorType","Temperature"},{"measurement","CpuPackage"},{"celsius",54} });
+        frame.Add("readings",readings);
         output.WriteLine(Json.Serialize(frame));
     }
 }

@@ -11,6 +11,8 @@ namespace WinMemoryCleaner
         private readonly ITemperatureSource _open;
         private readonly object _demandGate=new object();
         private bool _requested=true;
+        private bool _covered;
+        private int _demandVersion;
 
         internal TemperatureSampler() : this(new SensorBackendController()) { }
         // A null backend permits isolated verification of the existing native sources.
@@ -22,7 +24,7 @@ namespace WinMemoryCleaner
             if(open==null)throw new ArgumentNullException("open");
             _backend=backend;_native=native;_libre=libre;_open=open;
         }
-        internal string BackendStatus { get { lock(_demandGate) { return _disposed||!_requested||_backend==null?"Disabled":_backend.BackendStatus; } } }
+        internal string BackendStatus { get { lock(_demandGate) { return _disposed||!_requested||_backend==null?"Disabled":_covered?"NotNeeded":_backend.BackendStatus; } } }
         internal string DriverStatus { get { return _backend==null?"NotChecked":_backend.DriverStatus; } }
         internal string Diagnostic { get { return _backend==null?"Universal backend disabled":_backend.Diagnostic; } }
         internal int ProcessId { get { return _backend==null?0:_backend.ProcessId; } }
@@ -35,7 +37,9 @@ namespace WinMemoryCleaner
             lock(_demandGate)
             {
                 if(_disposed)return;
+                if(_requested!=requested)_demandVersion++;
                 _requested=requested;
+                if(!requested)_covered=false;
                 if(!requested&&_backend!=null)_backend.Suspend();
             }
         }
@@ -57,28 +61,39 @@ namespace WinMemoryCleaner
         }
         private void ReadTemperatures(out MetricValue cpu,out MetricValue gpu)
         {
+            int version;
             lock(_demandGate)
             {
                 if(_disposed||!_requested){cpu=gpu=MetricValue.Missing(MetricStatus.Disabled,"Temperature sampling disabled");return;}
-                cpu=gpu=MetricValue.Missing(MetricStatus.Unsupported,"Universal backend disabled");
-                if(_backend!=null)
-                {
-                    try { _backend.GetSnapshot(out cpu,out gpu); }
-                    catch(Exception error) { cpu=gpu=Failure("Universal backend",error); }
-                }
+                version=_demandVersion;
             }
+            // Reuse installed drivers and already-running WMI providers before opening our isolated backend.
+            if(_native==null)SampleNative(out cpu,out gpu);
+            else ReadSource(_native,"Native temperature source",out cpu,out gpu);
             cpu=Validate(cpu);gpu=Validate(gpu);
-            if(Complete(cpu,gpu))return;
             MetricValue nextCpu,nextGpu;
-            if(_native==null)SampleNative(out nextCpu,out nextGpu);
-            else ReadSource(_native,"Native temperature source",out nextCpu,out nextGpu);
-            cpu=Merge(cpu,nextCpu);gpu=Merge(gpu,nextGpu);
-            if(Complete(cpu,gpu))return;
-            ReadSource(_libre,"LibreHardwareMonitor WMI",out nextCpu,out nextGpu);
-            cpu=Merge(cpu,nextCpu);gpu=Merge(gpu,nextGpu);
-            if(Complete(cpu,gpu))return;
-            ReadSource(_open,"OpenHardwareMonitor WMI",out nextCpu,out nextGpu);
-            cpu=Merge(cpu,nextCpu);gpu=Merge(gpu,nextGpu);
+            if(!Complete(cpu,gpu))
+            {
+                ReadSource(_libre,"LibreHardwareMonitor WMI",out nextCpu,out nextGpu);
+                cpu=Merge(cpu,nextCpu);gpu=Merge(gpu,nextGpu);
+            }
+            if(!Complete(cpu,gpu))
+            {
+                ReadSource(_open,"OpenHardwareMonitor WMI",out nextCpu,out nextGpu);
+                cpu=Merge(cpu,nextCpu);gpu=Merge(gpu,nextGpu);
+            }
+            lock(_demandGate)
+            {
+                // A cancellation/suspension during native work must not create a late child.
+                if(_disposed||!_requested||version!=_demandVersion)
+                { cpu=gpu=MetricValue.Missing(MetricStatus.Disabled,"Temperature sampling disabled");return; }
+                _covered=Complete(cpu,gpu);
+                if(_backend==null)return;
+                if(_covered) { _backend.Suspend();return; }
+                try { _backend.GetSnapshot(cpu.Status!=MetricStatus.Available,gpu.Status!=MetricStatus.Available,out nextCpu,out nextGpu); }
+                catch(Exception error) { nextCpu=nextGpu=Failure("Universal backend",error); }
+                cpu=Merge(cpu,nextCpu);gpu=Merge(gpu,nextGpu);
+            }
         }
         private void SampleNative(out MetricValue cpu,out MetricValue gpu)
         {
@@ -126,7 +141,7 @@ namespace WinMemoryCleaner
         internal void Suspend()
         {
             if(_disposed)return;
-            lock(_demandGate) { if(_backend!=null)_backend.Suspend(); }
+            lock(_demandGate) { _demandVersion++;_covered=false;if(_backend!=null)_backend.Suspend(); }
             if(_native!=null)_native.Suspend();
             _libre.Suspend();_open.Suspend();CloseNvidia();if(_asus!=null)_asus.Suspend();
         }

@@ -173,7 +173,7 @@ namespace WinMemoryCleaner
                 var manifest = serializer.DeserializeObject(new UTF8Encoding(false, true).GetString(bytes)) as IDictionary<string, object>;
                 if (manifest == null || manifest.Count != 3 || !manifest.ContainsKey("version") || !manifest.ContainsKey("protocol") || !manifest.ContainsKey("files") || !(manifest["protocol"] is int) || (int)manifest["protocol"] != 1 || !String.Equals(manifest["version"] as string, SensorProtocol.PayloadVersion, StringComparison.Ordinal)) throw new InvalidDataException("Incompatible sensor manifest.");
                 var items = manifest["files"] as IList;
-                if (items == null || items.Count < 4 || items.Count > 64) throw new InvalidDataException("Invalid sensor file count.");
+                if (items == null || items.Count < 3 || items.Count > 64) throw new InvalidDataException("Invalid sensor file count.");
                 var files = new List<PayloadFile>(); var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase); long total = 0;
                 foreach (object item in items)
                 {
@@ -187,7 +187,7 @@ namespace WinMemoryCleaner
                     if (length <= 0 || length > 67108864 || total > 134217728 || hash == null || !Regex.IsMatch(hash, @"\A[0-9a-f]{64}\z", RegexOptions.CultureInvariant) || resource != ResourcePrefix + path + ".gz") throw new InvalidDataException("Invalid sensor file metadata.");
                     files.Add(new PayloadFile(path, length, hash, resource));
                 }
-                foreach (string required in new[] { "WinMemoryCleaner.Sensors.exe", "WinMemoryCleaner.Sensors.exe.config", "LibreHardwareMonitorLib.dll", "PawnIO_setup.exe" })
+                foreach (string required in new[] { "WinMemoryCleaner.Sensors.exe", "WinMemoryCleaner.Sensors.exe.config", "LibreHardwareMonitorLib.dll" })
                     if (!names.Contains(required)) throw new InvalidDataException("Required sensor file is absent.");
                 return files;
             }
@@ -200,7 +200,7 @@ namespace WinMemoryCleaner
             { var text = new StringBuilder(); foreach (byte value in hash.ComputeHash(input)) text.Append(value.ToString("x2", CultureInfo.InvariantCulture)); return text.ToString(); }
         }
 
-        private static void CheckDirectoryChain(string path)
+        internal static void CheckDirectoryChain(string path)
         {
             foreach (string part in PayloadFileAccess.DirectoryChain(path))
                 if (System.IO.Directory.Exists(part) || File.Exists(part))

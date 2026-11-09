@@ -5,7 +5,10 @@ namespace WinMemoryCleaner
     /// </summary>
     public class Computer : ObservableObject
     {
-        private Memory _memory;
+        private volatile Memory _memory;
+        private readonly object _memoryDisplayGate = new object();
+        private volatile bool _memoryNotificationsEnabled = true;
+        private bool _memoryNotificationPending;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Computer" /> class.
@@ -25,9 +28,35 @@ namespace WinMemoryCleaner
             get { return _memory; }
             set
             {
-                _memory = value;
-                RaisePropertyChanged("Memory");
+                bool notify;
+                lock (_memoryDisplayGate)
+                {
+                    // Keep the shared source current even while its main-window bindings
+                    // are hidden. Tray/cleaning/overlay consumers read this same snapshot.
+                    _memory = value;
+                    notify = _memoryNotificationsEnabled;
+                    _memoryNotificationPending = !notify;
+                }
+                if (notify) RaisePropertyChanged("Memory");
             }
+        }
+
+        internal bool MemoryNotificationsEnabled { get { return _memoryNotificationsEnabled; } }
+
+        internal bool SetMemoryNotificationsEnabled(bool enabled)
+        {
+            bool notify;
+            lock (_memoryDisplayGate)
+            {
+                if (_memoryNotificationsEnabled == enabled) return false;
+                _memoryNotificationsEnabled = enabled;
+                notify = enabled && _memoryNotificationPending;
+                if (notify) _memoryNotificationPending = false;
+            }
+            // Do not invoke subscribers under the state lock. Restore publishes only
+            // the latest snapshot, never a queue of intermediate background samples.
+            if (notify) RaisePropertyChanged("Memory");
+            return true;
         }
 
         /// <summary>

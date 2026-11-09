@@ -49,7 +49,9 @@ internal static class MonitoringInteraction
         {
             _monitor = Get(window, "Monitoring");
             Check("default interval 2s / overlay off", (int)Get(_monitor, "RefreshSeconds") == 2 && !(bool)Get(_monitor, "OverlayEnabled"));
-            Check("refresh choices exactly 1,2,5", string.Join(",", Array.ConvertAll((int[])Get(_monitor, "RefreshChoices"), delegate(int i) { return i.ToString(CultureInfo.InvariantCulture); })) == "1,2,5");
+            var choices = new List<string>();
+            foreach (object choice in (IEnumerable)Get(_monitor, "RefreshChoices")) choices.Add(Convert.ToInt32(choice, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture));
+            Check("refresh choices exactly 1,2,5", string.Join(",", choices.ToArray()) == "1,2,5");
             Until(delegate { return ((string)Get(_monitor, "CpuText")).EndsWith("%", StringComparison.Ordinal); }, 12000, "real overview CPU reading");
             Capture("overview-default");
             Select(1);
@@ -132,6 +134,20 @@ internal static class MonitoringInteraction
     {
         var rows = new List<object>(); foreach (object row in (IEnumerable)Get(_monitor, "ProcessesView")) rows.Add(row); return rows;
     }
+    private static bool SearchMatches(string query, bool requireSelf)
+    {
+        var filtered = VisibleRows();
+        if (filtered.Count == 0) return false;
+        bool selfFound = false;
+        foreach (var row in filtered)
+        {
+            string id = Get(row, "Id").ToString(), name = (string)Get(row, "Name");
+            if (id == query) selfFound = true;
+            if (!id.Contains(query) && name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0) return false;
+        }
+        return !requireSelf || selfFound;
+    }
+
     private static void CheckProcessView()
     {
         var rows = VisibleRows(); var ids = new HashSet<int>(); int duplicateNames = 0; var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -140,18 +156,11 @@ internal static class MonitoringInteraction
         var search = (TextBox)_window.FindName("ProcessSearch");
         string query = Process.GetCurrentProcess().Id.ToString(CultureInfo.InvariantCulture);
         search.Text = query; search.GetBindingExpression(TextBox.TextProperty).UpdateSource();
-        var filtered = VisibleRows();
-        bool selfFound = false, allMatch = filtered.Count > 0;
-        foreach (var row in filtered)
-        {
-            string id = Get(row, "Id").ToString(), name = (string)Get(row, "Name");
-            if (id == query) selfFound = true;
-            if (!id.Contains(query) && name.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0) allMatch = false;
-        }
-        Check("UI PID search keeps self and only matching rows", selfFound && allMatch);
+        Until(delegate { return SearchMatches(query, true); }, 2000, "UI PID search keeps self and only matching rows");
         search.Text = "monitoringharness"; search.GetBindingExpression(TextBox.TextProperty).UpdateSource();
-        Check("UI case-insensitive name search", VisibleRows().Count > 0);
+        Until(delegate { return SearchMatches("monitoringharness", false); }, 2000, "UI case-insensitive name search contains only matching rows");
         search.Text = string.Empty; search.GetBindingExpression(TextBox.TextProperty).UpdateSource();
+        Until(delegate { return VisibleRows().Count >= 20; }, 2000, "clearing search restores the process list");
         foreach (string field in new[] { "WorkingSetBytes", "CpuUsage", "GpuUsage", "GpuMemoryBytes" })
         {
             for (int pass = 0; pass < 2; pass++)
@@ -217,9 +226,21 @@ internal static class MonitoringInteraction
         Check("hidden/off stops CPU GPU process and temperature sampling", EqualCounters(before, after));
         Check("hidden releases all process rows", (int)Get(_monitor, "ProcessCount") == 0);
         _window.Show(); Select(0);
-        Until(delegate { return (int)Get(_monitor, "SampleCount") >= after[0] + 2 && ((string)Get(_monitor, "CpuText")).EndsWith("%", StringComparison.Ordinal); }, 10000, "overview resumes real sampling");
+        Until(delegate { return (int)Get(_monitor, "SampleCount") >= after[0] + 2 && (int)Get(_monitor, "TemperatureSampleCount") >= after[2] + 2 && ((string)Get(_monitor, "CpuText")).EndsWith("%", StringComparison.Ordinal); }, 10000, "overview resumes real resource and temperature sampling");
         Events.Add(new Dictionary<string, object> { { "state", "resumed overview" }, { "counters", Counters() }, { "gpu", Get(_monitor, "GpuText") }, { "gpuDetail", Get(_monitor, "GpuDetail") } });
-        _window.Hide();
+        Select(1);
+        Until(delegate { return (int)Get(_monitor, "ProcessSampleCount") >= after[1] + 2 && (int)Get(_monitor, "ProcessCount") >= 20; }, 10000, "process page resumes detail sampling");
+        _window.Hide(); Pump(800);
+        var overlayBefore = Counters();
+        bool cpuTemperature = (bool)Get(_monitor, "ShowCpuTemperature"), gpuTemperature = (bool)Get(_monitor, "ShowGpuTemperature");
+        Set(_monitor, "ShowCpuTemperature", true); Set(_monitor, "ShowGpuTemperature", true);
+        Set(_monitor, "OverlayEnabled", true);
+        Until(delegate { return (int)Get(_monitor, "SampleCount") >= overlayBefore[0] + 2 && (int)Get(_monitor, "TemperatureSampleCount") >= overlayBefore[2] + 2; }, 10000, "overlay alone resumes resource and temperature sampling");
+        Check("overlay alone does not resume process-detail sampling", (int)Get(_monitor, "ProcessSampleCount") == overlayBefore[1] && (int)Get(_monitor, "ProcessCount") == 0);
+        Events.Add(new Dictionary<string, object> { { "state", "resumed overlay only with temperatures" }, { "before", overlayBefore }, { "after", Counters() } });
+        Set(_monitor, "OverlayEnabled", false);
+        Set(_monitor, "ShowCpuTemperature", cpuTemperature); Set(_monitor, "ShowGpuTemperature", gpuTemperature);
+        Pump(800);
     }
 
     private static void OverlayScenario(bool fullscreen)
@@ -269,7 +290,7 @@ internal static class MonitoringInteraction
             Set(_monitor, "OverlayLayout", 0); Pump(200);
             Check(scenario + " compact horizontal strip", overlay.ActualHeight <= 36 && overlay.ActualWidth <= 430);
             Events.Add(new Dictionary<string, object> { { "scenario", scenario }, { "layout", "horizontal" }, { "widthDip", overlay.ActualWidth }, { "heightDip", overlay.ActualHeight } });
-            if (fullscreen) CheckDrag(target, overlay);
+            CheckDrag(target, overlay);
         }
         finally { Set(_monitor, "OverlayEnabled", false); target.Close(); SetCursorPos(cursor.X, cursor.Y); Pump(100); }
     }
@@ -391,10 +412,10 @@ internal static class MonitoringInteraction
         var sourceType = typeof(MainWindow).Assembly.GetType("WinMemoryCleaner.AsusCpuTemperatureSource");
         using (var source = (IDisposable)Activator.CreateInstance(sourceType))
         {
-            var direct = (MetricValue)sourceType.GetMethod("Sample", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(source, null);
-            if (direct.Status != MetricStatus.Available)
+            var direct = sourceType.GetMethod("Sample", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(source, null);
+            if (Get(direct, "Status").ToString() != "Available")
             {
-                Events.Add(new Dictionary<string, object> { { "asusUnavailable", direct.Detail } });
+                Events.Add(new Dictionary<string, object> { { "asusUnavailable", Get(direct, "Detail") } });
                 return;
             }
             Until(delegate { return ((string)Get(_monitor, "CpuTemperatureDetail")).IndexOf("ASUS", StringComparison.Ordinal) >= 0 && ((string)Get(_monitor, "OverlayCpuTemperatureText")).EndsWith("°C", StringComparison.Ordinal); }, 8000, "existing ASUS temperature reaches live overlay");

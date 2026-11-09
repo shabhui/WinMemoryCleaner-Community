@@ -1,5 +1,7 @@
 # 通用 CPU/GPU 温度检测验收记录
 
+> **历史记录说明**：本文仅记录旧 `v3.0.8.4-community.4` 与当时开发构建，不是当前 p3/发布候选的验证。当前按需来源顺序、2.2.0 安装入口见[使用指南](monitoring-guide.zh-CN.md)及[p3 记录](cpu-driver-prompt-report.zh-CN.md)。以下版本、测试数、门槛和失败事实按原记录保留；本次仅脱敏，未重跑这些检查。`build/...` 仅为仓库相对的本地证据位置，不随发布公开，不嵌入原始截图/日志/个人环境；旧清单仍对应当时原件。
+
 > 发布完成：`v3.0.8.4-community.4` 已由 canonical 发布工作流 `39567637435` 于提交 `9e4876dc56cb43959e29226bff8ae9227870ca6e` 构建并发布（稳定、非草稿、未签名）。该次运行记录主套件 **554/554**、后端 **36/36**（零错误/失败/未运行）及源码包 2/2；七项正式资产经独立下载审计，最终 EXE 的内嵌载荷与源码指纹复核通过，并用该发布 EXE 完成隔离功能回归 **75通过/0失败/1不可验证**。本机通用 CPU 的受信驱动路径、AMD CPU/GPU 与 Intel GPU 实物仍未验证，不代表全部硬件通过。
 
 ## 固定架构与安全边界
@@ -7,9 +9,9 @@
 - 主程序 WPF / .NET Framework 4.0 / C# 4；独立后端 x64 / .NET Framework 4.7.2 / C# 4。
 - 固定 LibreHardwareMonitorLib 0.9.6（`3d331e3370efb858411f19511373eff65a218701`），12 个运行时 DLL 的长度和 SHA-256 由 `sensors/dependencies.lock.json` 锁定。
 - 所有组件、配置、许可证、锁文件和官方 PawnIO 2.1.0 安装器以逐文件 GZip 内嵌；无需 EXE 旁置后端目录。Task 3 压缩资源合计 **4,392,443 B** 为阶段数据；最终发布主 EXE 为 **4,957,184 B**（SHA-256 `a2ca707d…a122780`），其 24 个内嵌文件已与同次 canonical 报告逐项核对。
-- 安装器仅为数据；开发、单测、采样、构建和更新都不执行。实际驱动安装仍未获用户独立授权。既存共享 PawnIO 不覆盖、不降级，不使用 unrestricted/无签名模式。
+- 本历史版本把安装器仅作为数据；开发、单测、采样、构建和更新均未执行它。当时未执行真实驱动安装。既存共享 PawnIO 不覆盖、不降级，不使用 unrestricted/无签名模式；这不是当前 p3 的载荷成员说明。
 - 自有代码只启 CPU/GPU，不调用风扇、功耗、电压、超频或性能模式控制接口。上游底层硬件访问并不等同于所有 IOCTL 都具有“只读访问权限”。
-- CPU 只有父/子两端都通过固定官方标准驱动信任检查才启用。当前 Flydigi 共享驱动不是接受的标准镜像，CPU 通用来源必须诚实降级；不能描述为“机器未安装 PawnIO”。
+- CPU 只有父/子两端通过固定官方标准驱动信任检查才启用。当时测试环境存在未被接受的共享驱动，通用 CPU 来源必须如实降级；不能描述为“机器未安装 PawnIO”，具体第三方软件配置不公开。
 - 固定 LHM 的 Intel GPU 分组依赖 CPU 分组，因此相同可信驱动门控未通过时，Intel GPU 通用来源也不可用；NVIDIA/AMD GPU 分组仍可独立启用。
 
 ## 本地红绿与当前证据
@@ -51,7 +53,7 @@
 - 上次外层调用重定向与脚本内部 `safe-tests.log` 冲突，没有有效新 XML。6,019,444,228 B 的 scratch 日志已保留有界头尾诊断后删除；后续外层日志与内部日志分开。
 - 后端测试分析器实际发现并修复四个空数组分配、缺少测试版本 metadata 和 NUnit `params object[]` 特性的 CLS 声明问题；未跳过测试或弱化分析器。
 - 实窗工具第一轮在会话已放弃/后台清理时尝试观察旧Process，第二轮可见消费状态中途丢失（原记录没有WindowState证据，不能断言根因）。观察仅接受未放弃的Running会话，并新增窗口状态/消费诊断；最新完整轮次零失败，旧两轮失败日志保留，不当作最终证据。外层先以受控退出码7的空进程验证保留Handle/Refresh的退出采集，空退出码现在明确失败。
-- `RunSession`原先的提前return跳过尾部Cleanup，准备取消会永久持有租约并阻断后续会话。先用真实受控Prepare+可写锁检验得到两项行为RED，再移入finally；没有靠强制GC或PID=0冒充释放。
+- `RunSession` 提前 return 跳过尾部 Cleanup，使准备取消后租约无法释放并阻断后续会话；先取得两项真实受控 Prepare/锁行为 RED，再移入 finally 修复。没有靠强制 GC 或伪造空进程身份冒充释放。
 - 翻译时替换ComboBox字符串列表使WPF保留SelectedIndex=1却清空SelectedItem；仅过滤中间语言通知仍失败。实际控件诊断证明重复UpdateTarget无效，最终保留固定ComboBoxItem、只绑定翻译Content，布局及位置文字回归通过。安装确认框仅本入口增加最大600 DIP及工作区限制，中英文实际宽度588.67/598 DIP。
 - 2026-10-21生产功能复验中记录到意外最小化，按产品设计停止了无悬浮层的主窗需求；失败轮次保留。宿主原先仅Show而不恢复Normal，现明确恢复可见场景所需状态；不能把这些失败轮次计作通过。
 - 独立审查指出准备耗时误计入首帧预算、正常停止直接Kill、非法路径异常外泄及暂存遗留。先取得63项定向回归中的3 errors/3 failures，再修复：计时从子进程启动后开始，正常stop后台最多等2秒后才终止所属子进程，非法路径返回不可信/验证失败；暂存名按清单哈希前80位隔离并在完整哈希互斥下回收，正式缓存、清单和逐文件验证仍使用完整SHA-256。80位仅用于短临时目录前缀，以保持.NET4路径长度兼容。
@@ -76,13 +78,13 @@
 
 - 最新实窗使用生产Release **9bf97e580a38da69c2112abc57a2baebf011db4ad5a589a084257b559e65dca3**。外部VerificationApp宿主加载真实MainWindow/ResourceMonitor/TemperatureSampler/Controller及当前内嵌后端；外部宿主开销计入。不是直接生产App启动成本，也不是canonical CI二进制。
 - 先在真实HKLM下捕获生产`SensorDriverTrust.Inspect`，再只对本宿主重定向HKLM到一次性HKCU键；捕获的原对象传给真实父控制器，子后端独立检查真实系统。真实共享驱动状态为 **AccessDenied / servicePresent=true / cpuAllowed=false**，不能报告未安装；没有执行安装器。
-- 固定LHM通用NVIDIA RTX4080 Laptop **GPU Core 53–68°C**（62条Available记录）；ASUS CPU备用 **65–92°C**（104条选中Available记录）。NVAPI只在通用故障/准备期间独立备用。通用CPU、AMD硬件、Intel GPU通用路径没有实物通过证据。
+- 固定 LHM 通用 NVIDIA **GPU Core 53–68°C**（62 条 Available），ASUS CPU 备用 **65–92°C**（104 条选中 Available）；NVAPI 在通用故障/准备期间备用。具体硬件型号不公开；通用 CPU、AMD 硬件和 Intel GPU 通用路径没有实物通过证据。
 - 1/2/5秒各观察5.029/8.025/17.029秒，序号前进5/4/4次；保持同一PID且未重叠。关闭温度、隐藏且无条、设置页、最小化的子进程退出测量分别 **14.2021 / 9.5551 / 6.6450 / 10.7641 ms**，均从需求变更分派计时。恢复及两个重新创建窗口会话均成功。
 - 后端故障仅对已核实PID+创建时间+scratch EXE+Controller/Job的自有身份执行挂起或终止；过期/EOF撤销通用值，ASUS/NVAPI可用时显示实际备用并注明通用故障。最终自有子进程0、一次性注册项及scratch载荷已移除、真实HKLM设置指纹未变。新截图已生成但本轮人工视觉检查仍待执行。
 
 ### Task 5 本地性能与独立重算（2026-10-20）
 
-测量生产EXE SHA-256为 `0a45a1e9e78afa8864f76d455bdc43bff05bf0878b59cf76c43c5db1dab690b4`，工具源码为 `b8b3bb32023786a416d9c7846211302c1e0c8134d5a2b3506a24ad98f8d9bd60`。这是界面最终修复之前的本地开发构建，**不是最终canonical发布EXE**。UTC 2026-10-20 14:22:41至14:38:02，2秒温度需求；外部真实窗口宿主开销计入主进程，不代表生产App直接启动成本。
+测量生产 EXE SHA-256 为 `0a45a1e9e78afa8864f76d455bdc43bff05bf0878b59cf76c43c5db1dab690b4`，工具源码为 `b8b3bb32023786a416d9c7846211302c1e0c8134d5a2b3506a24ad98f8d9bd60`。这是界面最终修复前的本地开发构建，**不是最终 canonical 发布 EXE**。测量为 **2 秒**温度需求，外部真实窗口宿主计入主进程，不代表生产 App 直接启动成本；不公开本地起止时刻。
 
 | 轮次（预热/实测秒） | 主/后端CPU中位数 | 合计CPU中位数 | 主/后端私有内存中位数 MiB | 合计私有内存中位数 MiB | 合计增长 MiB | UI调度p95 ms |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -91,11 +93,11 @@
 | 3（30.305/60.486） | 0.048505% / 0.023857% | 0.096461% | 72.039 / 43.953 | 116.076 | 1.863 | 0.7428 |
 | 留存（30.280/604.893） | 0.048343% / 0% | 0.048673% | 72.207 / 47.422 | 119.535 | 5.266 | 0.8464 |
 
-CPU按进程CPU时间增量/实际单调时长/32逻辑处理器归一化，合计先逐样本相加再取中位数。主/后端各自中位数不能直接相加代替合计中位数；内存增长从预热最后样本到测量最后样本计算。独立Python审计逐条重算 **780个测量样本**、实际时长、CPU/内存、最近秩p95、固定PID/创建时间/执行路径、所有检查及证据文件SHA；三短轮各13项、留存14项通过。三轮合计CPU均<1%、所有UIp95≤50ms、十分钟增长5.266MiB≤10MiB；四轮均无自有子进程残留、一次性注册项与scratch载荷均移除，安装器均未执行。
+CPU按进程CPU时间增量/实际单调时长/全机逻辑处理器数归一化，合计先逐样本相加再取中位数。主/后端各自中位数不能直接相加代替合计中位数；内存增长从预热最后样本到测量最后样本计算。独立Python审计逐条重算 **780个测量样本**、实际时长、CPU/内存、最近秩p95、固定PID/创建时间/执行路径、所有检查及证据文件SHA；三短轮各13项、留存14项通过。三轮合计CPU均<1%、所有UIp95≤50ms、十分钟增长5.266MiB≤10MiB；四轮均无自有子进程残留、一次性注册项与scratch载荷均移除，安装器均未执行。
 
 ## 正式发布与最终资产验证（2026-10-21）
 
-- **发布身份**：`v3.0.8.4-community.4`，[Release](https://github.com/shabhui/WinMemoryCleaner-Community/releases/tag/v3.0.8.4-community.4)，`draft=false`、`prerelease=false`，发布 UTC `2026-10-21T08:15:20Z`；标签引用为 commit `9e4876dc56cb43959e29226bff8ae9227870ca6e`，与 `target_commitish` 一致。正式发布工作流 [39567637435](https://github.com/shabhui/WinMemoryCleaner-Community/actions/runs/39567637435)（`workflow_dispatch`）结论 `success`；同提交的 CI 39567029870 与无发布产物门禁 39567068285 亦通过。
+- **发布身份**：`v3.0.8.4-community.4`，[Release](https://github.com/shabhui/WinMemoryCleaner-Community/releases/tag/v3.0.8.4-community.4)，`draft=false`、`prerelease=false`；commit `9e4876dc56cb43959e29226bff8ae9227870ca6e` 与 `target_commitish` 一致。正式工作流 [39567637435](https://github.com/shabhui/WinMemoryCleaner-Community/actions/runs/39567637435)（`workflow_dispatch`）为 `success`；同提交 CI 39567029870、无发布产物门禁 39567068285 亦通过。这些是旧版本公开记录，不是当前发布结果。
 - **同次构建测试**：主套件 **554/554，14.106 s**、后端 **36/36，0.869 s**，`errors/failures/not-run/skipped/invalid/inconclusive` 全为 0；对应源码行为测试 **2/2**（3 份固定档案、10 条目，无安装器、未打开硬件）。生产、测试、打包三份载荷报告字节完全一致（SHA-256 `14c3d7dcc8f754cdf5163b98738cdc7c0a946b04c9aee0896e70a0aef9b41092`）：主/后端 `3.0.8.4`、24 文件、25 资源、14 源码指纹、9 分析器，反射式验证未运行 EXE。
 - **七项正式资产**（每项均核对 GitHub 公布的大小与 `sha256:` 摘要，并已完整下载到会话 scratch；此前中断的部分下载保留为证据）：
 
@@ -112,22 +114,22 @@ CPU按进程CPU时间增量/实际单调时长/32逻辑处理器归一化，合�
 - **内容一致性**：EXE 与源码 sidecar 均与各自资产匹配；便携 ZIP 18 个文件、17 项校验全覆盖且与独立 EXE 字节相同，6 份许可与依赖锁逐字节一致；源码 ZIP 的 3 份固定档案与 4 份许可匹配 `sources.lock.json` / `dependencies.lock.json`，`README.md`/通知与仓库文本一致；`AssemblyInfo.txt` 公告 `AssemblyVersion("3.0.8.4")`。
 - **更新通道实测**：`GET /releases/latest` 返回同一稳定版本；经公共 HTTPS（命令级地址覆盖，未改系统 DNS/Git 配置/TLS 校验）下载 `releases/latest/download/WinMemoryCleaner.Community.exe`、`.exe.sha256` 与 `AssemblyInfo.txt`，重定向到 `v3.0.8.4-community.4` 后字节与上表完全一致——这是更新通道实际字节，而非仅元数据推断。
 - **最终 EXE 载荷**：反射式提取并逐文件比对正式 `packaged-payload.json`，manifest `053a5e9be337b5f3162a5de46f1ce6138c2c0e32340e562b5eed391b609f96d0`；随后在按发布提交 detached、命令级 `core.autocrlf=true` 的 canonical 源码工作树上运行仓库验证器，**24 文件 / 25 资源 / 14 源码指纹 / 9 分析器** 全部通过（exit 0），未执行 EXE、后端或安装器。
-- **最终发布 EXE 隔离功能回归**：`published-final-functional`，UTC `2026-10-21T14:26:51`–`14:28:32`，宿主退出 0；绑定记录 `productCanonicalRelease=true`、标签 `v3.0.8.4-community.4`、加载字节 SHA-256 与上表 EXE 相同。结果 **76 项检查：75 通过 / 0 失败 / 1 不可验证**（通用 CPU），UI 调度 p95 **0.5012 ms**，最多 1 个自有后端，8 个自有子进程全部 `alive=false`、`remainingOwnedChildren=0`，一次性注册表覆盖与 scratch 载荷均移除，绑定日志 0 B，未使用用户缓存、未执行安装器、未触碰受保护 PID。
-- **本轮真实硬件读数（仍限本机）**：固定 LHM 通用 **RTX 4080 Laptop GPU Core 85–89 °C** 多次可用；后端通用 CPU 保持 `Disabled`（`driver=AccessDenied`，`servicePresent=true`，`cpuAllowed=false`），选中 CPU 走已安装 ASUS `0x00120094` 备用（故障注入后实测 80 °C）。通用 CPU 的可信驱动路径必须标为未验证，不能写作“未安装 PawnIO”。
+- **最终发布 EXE 隔离功能回归**：`published-final-functional`，宿主退出 **0**；`productCanonicalRelease=true`、标签与 EXE SHA-256 与上表一致。**76 项检查：75 通过 / 0 失败 / 1 不可验证**（通用 CPU），UI 调度 p95 **0.5012 ms**，最多 **1** 个自有后端，**8** 个自有子进程全部退出、剩余 **0**。一次性注册表覆盖及临时载荷已移除，绑定日志 **0 B**；未使用用户缓存、执行安装器或触碰既有进程。不公开具体身份和本地时刻。
+- **真实硬件读数（限当时环境）**：固定 LHM 的 NVIDIA GPU Core **85–89°C** 多次可用；后端 CPU 保持 `Disabled`（`AccessDenied`、服务存在、不允许 CPU），选中 CPU 使用 ASUS **0x00120094** 备用，故障注入后实测 **80°C**。这不代表可信驱动通用 CPU 通过，也不能写成“未安装 PawnIO”；设备型号已去标识化。
 - 宿主 `summary.json` 中 `canonicalReleaseEvidence` 是该工具固定的静态字段（工具本身不读取发布审计），发布谱系以同目录 `build-identity.json` 的 `productCanonicalRelease`、`canonicalReleaseTag` 与 EXE SHA-256 三重一致为准。
 
 ## 保护环境复核
 
-- 用户原 EXE `D:\下载\WinMemoryCleaner.Community.exe` SHA-256 与基线一致：`E13B383CF807D379B1B18878CA411A2CD4A2131CD28C9A6815F205CC076B4114`；未覆盖。
-- 原 PID 23072 在记录到的系统重启（UTC `2026-10-19T22:05:24.5Z`）后已不存在，不能声称仍是同一存活实例；当前用户进程不结束。
-- 原开机任务仅 `RegistrationInfo/Date` 从 `2026-10-17T12:33:41` 变成 `2026-10-20T06:06:45`；其他 XML 字段一致。不恢复或改写用户任务。
-- HKLM 32/64 位清理器设置、共享 PawnIO 注册项与驱动字节仍匹配原基线；共享驱动 SHA-256：`E19F274B9F3C917445BFF19A80BBE2EE34A54995E62BE50073122B20D86AF900`。
-- Task 4 最终安全/实窗测试后无 session scratch 可执行进程（只读检查0）；当前保护用户PID14816，创建UTC `2026-10-19T22:06:40.5181131Z`，未结束。失败构建 staging 已清理；原任务raw XML检查仍仅报告上述注册时间差异，不能称其完全相同。
+- 用户原有 EXE 未覆盖，其字节与当时基线一致；基线 SHA-256 为 `E13B383CF807D379B1B18878CA411A2CD4A2131CD28C9A6815F205CC076B4114`，不公开安装位置或进程身份。
+- 系统重启后旧实例已不存在，编号被复用不能视为同一存活实例；未结束用户当前进程。
+- 原开机任务仅注册日期字段有变化，其他 XML 字段一致；**不能称其完全相同**，未恢复或改写任务，不公开原始配置内容。
+- HKLM 32/64 位清理器设置、共享驱动注册项与驱动字节仍匹配当时基线；不公开个人配置和非公开共享驱动指纹。
+- Task 4 最终安全/实窗测试后只读检查临时可执行进程为 **0**，失败 staging 已清理；既有用户进程未被终止。
 
 ## 边界与未验证项
 
-1. **未授权/未验证的硬件路径**：实际驱动安装仍未获授权（所有确认测试都取消，未执行官方安装器）。因此通用 CPU 的受信 PawnIO 路径、AMD CPU、AMD GPU、Intel GPU 均无实物通过证据；通用 Intel GPU 分组还受固定 LHM 与 CPU 分组耦合的门控限制。本轮只实测了 NVIDIA RTX 4080 的通用 GPU 核心温度与 ASUS CPU 备用。
+1. **未验证的硬件路径**：当时所有安装确认测试均取消，未执行官方安装器。因此通用 CPU 受信 PawnIO、AMD CPU/GPU、Intel GPU 均无实物通过证据；通用 Intel GPU 还受固定 LHM 与 CPU 分组耦合门控。当时仅实测 NVIDIA 通用核心温度与 ASUS CPU 备用，不能外推所有硬件。
 2. **性能口径**：780 样本三轮短测与十分钟留存属于本地开发构建 `0a45a1e9…690b4`，不重跑、不冒充发布版数字；发布版仅记录 UI 调度 p95 0.5012 ms 与生命周期/清理结果，未重复整轮性能测量。
-3. **人工视觉检查**：本会话 Browser 面板仍不可用，未做新的人工截图目检；最终功能轮次已生成截图文件与真实窗口几何/样式断言（横向 316×26、竖向 118×78 DIP，确认框 588.67/598 DIP），但不宣称替代人工目检。
+3. **人工视觉检查**：当时 Browser 面板不可用，未做新的人工截图目检；最终功能轮次已生成截图文件与真实窗口几何/样式断言（横向 316×26、竖向 118×78 DIP，确认框 588.67/598 DIP），但不宣称替代人工目检。
 4. **历史证据等级**：`final-functional-3`（75/0/1）针对审查前本地生产构建，仅作历史记录；审查修复后的 canonical 结果即上表 554/36 与发布运行。全部失败/中断轮次（`final-functional`、`final-functional-2`、早期 canonical 失败与两次被取消的诊断运行）均保留，不计为通过。
-5. **受保护环境**：用户 EXE `D:\下载\WinMemoryCleaner.Community.exe` 未改动；PID 23072 是系统重启后被复用的编号，不是原清理器实例；开机任务仅有已记录的注册时间差异，其余字段一致，未改写。
+5. **受保护环境**：既有用户 EXE 未改动，历史进程编号复用不能视为原实例存活；开机任务有已记录的注册日期差异，其余字段一致，未改写。

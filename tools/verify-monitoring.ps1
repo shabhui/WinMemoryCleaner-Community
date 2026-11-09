@@ -14,6 +14,8 @@ param(
     [switch]$CaptureScreenshots
 )
 $ErrorActionPreference = 'Stop'
+$OutputEncoding=New-Object Text.UTF8Encoding($false)
+[Console]::OutputEncoding=$OutputEncoding
 $repo = Split-Path $PSScriptRoot -Parent
 $AssemblyPath = (Resolve-Path -LiteralPath $AssemblyPath).Path
 if (-not $ApplicationXamlPath) { $ApplicationXamlPath=Join-Path $repo 'src\App.xaml' }
@@ -21,12 +23,13 @@ $ApplicationXamlPath=(Resolve-Path -LiteralPath $ApplicationXamlPath).Path
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repo 'build\monitoring-verification\current' }
 if (-not $HarnessDirectory) { throw 'Set HarnessDirectory to a temporary directory.' }
 if ($WarmupSeconds -lt 0 -or $MeasurementSeconds -lt 1 -or $Trials -lt 1) { throw 'Invalid timing/trial settings.' }
+if ((Test-Path -LiteralPath $OutputDirectory) -and @(Get-ChildItem -LiteralPath $OutputDirectory -Force | Select-Object -First 1).Count) { throw 'Choose an empty output directory; prior evidence will not be overwritten.' }
 [void](New-Item -ItemType Directory -Force -Path $OutputDirectory,$HarnessDirectory)
 $ref = Join-Path $repo 'src\packages\Microsoft.NETFramework.ReferenceAssemblies.net40.1.0.3\build\.NETFramework\v4.0'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $harness = Join-Path $HarnessDirectory 'MonitoringHarness.exe'
 $references = @('mscorlib.dll','System.dll','System.Core.dll','System.Drawing.dll','System.Windows.Forms.dll','System.Web.Extensions.dll','System.Xml.dll','System.Xml.Linq.dll','WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll','System.Xaml.dll') | ForEach-Object { '/reference:'+(Join-Path $ref $_) }
-& $compiler /noconfig /nostdlib+ /langversion:4 /warnaserror+ /target:exe ('/out:'+$harness) ('/reference:'+$AssemblyPath) $references (Join-Path $PSScriptRoot 'MonitoringHarness.cs') (Join-Path $PSScriptRoot 'MonitoringInteraction.cs') *> (Join-Path $OutputDirectory 'harness-build.log')
+& $compiler /noconfig /nostdlib+ /langversion:4 /warnaserror+ /target:exe ('/out:'+$harness) ('/reference:'+$AssemblyPath) $references (Join-Path $PSScriptRoot 'MonitoringHarness.cs') (Join-Path $PSScriptRoot 'MonitoringInteraction.cs') (Join-Path $PSScriptRoot 'MonitoringProcessAccounting.cs') *> (Join-Path $OutputDirectory 'harness-build.log')
 if ($LASTEXITCODE -ne 0) { throw ('Harness build failed: '+(Join-Path $OutputDirectory 'harness-build.log')) }
 @'
 <?xml version="1.0"?><configuration><startup useLegacyV2RuntimeActivationPolicy="true"><supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.0"/></startup></configuration>
@@ -38,10 +41,12 @@ $conditions = [ordered]@{
     os=[Environment]::OSVersion.VersionString; logicalProcessors=[Environment]::ProcessorCount
     warmupSeconds=$WarmupSeconds; measurementSeconds=$MeasurementSeconds; trials=$Trials
     captureScreenshots=[bool]$CaptureScreenshots; interactionCaptures=$true
-    harnessSources=@('MonitoringHarness.cs','MonitoringInteraction.cs','verify-monitoring.ps1') | ForEach-Object { [ordered]@{file=$_; sha256=(Get-FileHash (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash} }
-    sequential=$true; clock='Stopwatch'; cpu='Process.TotalProcessorTime / elapsed / logicalProcessors * 100'
-    memory='Process.PrivateMemorySize64 (working set separately)'; isolation='Disposable HKCU subtree redirected to HKLM in harness process only'
+    harnessSources=@('MonitoringHarness.cs','MonitoringInteraction.cs','MonitoringProcessAccounting.cs','verify-monitoring.ps1') | ForEach-Object { [ordered]@{file=$_; sha256=(Get-FileHash (Join-Path $PSScriptRoot $_) -Algorithm SHA256).Hash} }
+    sequential=$true; clock='Stopwatch'; cpu='Nested job total kernel+user time / elapsed / logicalProcessors * 100; includes exited descendants'
+    memory='Sum of host and owned descendants PrivateUsage; working-set sum separately (shared pages may be counted twice)'; isolation='Disposable HKCU subtree redirected to HKLM in harness process only'
     settings='zh-Hans; dark (except light capture); 14pt; no auto-clean/update/hotkey; tray memory on; monitor interval default 2s; overlay only in overlay mode'
+    startupScope='Real product windows/resources; verification App skips production startup, migration and single-instance handling'
+    processScope='Harness assigned to its own nested Windows job before application initialization; retained read-only handles plus job membership and creation identity checks'
 }
 $conditions | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'conditions.json') -Encoding UTF8
 $rows = @()
@@ -56,13 +61,15 @@ foreach ($mode in $Modes) {
         $info.FileName=$harness; $info.Arguments=$arguments; $info.UseShellExecute=$false
         $info.CreateNoWindow=$true; $info.RedirectStandardOutput=$true; $info.RedirectStandardError=$true
         $process = [System.Diagnostics.Process]::Start($info)
-        if (-not $process.WaitForExit([Math]::Max(240,($WarmupSeconds+$MeasurementSeconds+90))*1000)) {
-            # Only the process returned by OUR Start-Process is eligible for shutdown.
-            $process.Kill(); $process.WaitForExit(); throw 'Our verification harness timed out.'
+        $stdoutTask=$process.StandardOutput.ReadToEndAsync(); $stderrTask=$process.StandardError.ReadToEndAsync()
+        $timedOut=-not $process.WaitForExit([Math]::Max(240,($WarmupSeconds+$MeasurementSeconds+90))*1000)
+        if ($timedOut) {
+            # The retained Process handle belongs only to OUR newly started harness.
+            $process.Kill(); if (-not $process.WaitForExit(10000)) { throw 'Owned harness did not exit after its timeout.' }
         }
         $code=$process.ExitCode
-        $process.StandardOutput.ReadToEnd() | Set-Content -LiteralPath (Join-Path $dir 'stdout.log') -Encoding UTF8
-        $process.StandardError.ReadToEnd() | Set-Content -LiteralPath (Join-Path $dir 'stderr.log') -Encoding UTF8
+        $stdoutTask.GetAwaiter().GetResult() | Set-Content -LiteralPath (Join-Path $dir 'stdout.log') -Encoding UTF8
+        $stderrTask.GetAwaiter().GetResult() | Set-Content -LiteralPath (Join-Path $dir 'stderr.log') -Encoding UTF8
         $process.Dispose()
         $keyFile = Join-Path $dir 'isolated-registry-path.txt'
         if (Test-Path -LiteralPath $keyFile) {
@@ -71,6 +78,7 @@ foreach ($mode in $Modes) {
             $keyPath='HKCU:\'+$key
             if (Test-Path -LiteralPath $keyPath) { Remove-Item -LiteralPath $keyPath -Recurse -Force }
         }
+        if ($timedOut) { throw 'Our verification harness timed out; completed logs were retained.' }
         if ($code -ne 0) { throw ('Harness failed ('+$code+'): '+$dir) }
         $rows += Get-Content -LiteralPath (Join-Path $dir 'summary.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     }

@@ -14,7 +14,7 @@
 
 - 主程序保持 WPF、.NET Framework 4.0、C# 4、`AllRules.ruleset` 和 warnings-as-errors；自有后端 x64/net472/C#4 使用同一分析器规则。
 - 固定 LHM 0.9.6、提交 `3d331e3370efb858411f19511373eff65a218701`；固定 NuGet 内容哈希，保留许可/源码信息。
-- 不结束 PID 23072、不覆盖 `D:\下载\WinMemoryCleaner.Community.exe`、不写真实清理器 HKLM 设置/原开机任务。
+- 不结束用户运行中的实例，不覆盖用户使用的 EXE，不写真实清理器 HKLM 设置或原开机任务。
 - 本次连续实施获用户授权；实际安装 PawnIO 没有单独授权，开发和 CI 均不得执行安装器。
 - 只启 CPU/GPU；CPU 仅在官方签名 PawnIO 状态可靠验证后启用；配置默认值适配器不读取/保存控制设置，自有代码不调用控制接口。
 - 温度有限且 1–150°C；CPU 按规格六级选择，GPU 仅核心温度；不得冒充热点、显存、ACPI 区域或到阈值距离。
@@ -62,13 +62,11 @@
 
 ## Execution commands
 
-所有 Git 命令带 `git -c safe.directory=G:/AI项目/WinMemoryCleaner-main/WinMemoryCleaner-Community -C <repo>`。PowerShell 执行策略限制下将构建脚本读为UTF8并替换 `$PSScriptRoot` 后以ScriptBlock执行；不改变机器执行策略。
+所有 Git 命令从仓库根目录运行，或使用 `git -C <repo>`。构建须遵守本机执行策略；临时进程放行需单独获准，不改变机器或用户执行策略。
 
 ```powershell
-$repo='G:\AI项目\WinMemoryCleaner-main\WinMemoryCleaner-Community'
-$body=[IO.File]::ReadAllText("$repo\tools\build-monitoring.ps1",[Text.Encoding]::UTF8)
-$body=$body.Replace('$PSScriptRoot',"$repo\tools")
-& ([ScriptBlock]::Create($body)) -Mode Test
+$repo = (Get-Location).Path # 从仓库根目录运行
+& (Join-Path $repo 'tools\build-monitoring.ps1') -Mode Test
 ```
 
 本地 in-box 构建仅作开发检查；后端可用下载到会话scratch的net472引用和Roslyn编译器检查。canonical CI 才是最终分析器/发布权威。
@@ -106,7 +104,7 @@ $body=$body.Replace('$PSScriptRoot',"$repo\tools")
 - [x] **Step 3: Implement payload**：CI JSON清单自身SHA作为版本目录；临时目录完整验证后Directory.Move；拒绝重解析链/异常目录，启动前锁定并再核验所有文件。
 - [x] **Step 4: Write failing install/trust tests**：未授权/取消不启动；签名失败/设备不可用/新版已装不覆盖；重复请求仅一次；退出0但未就绪/3010需重启/失败均显示原因；安装后重新检查并通知控制器重启。
 - [x] **Step 5: Implement trust/installer**：WinVerifyTrust +官方签名身份/模式验证，已有驱动只读；安装文件固定并防替换；交互启动无静默/自动重启/安全降级参数，等待后台执行。
-- [x] **Step 6: Run safe tests and input hash checks**：495/495 安全测试通过，16个固定包/12个DLL恢复通过；旧EXE、PID23072、HKLM32/64、原任务和现有共享PawnIO均未改变；提交 `feat: prepare verified sensor payload and explicit driver installation`。
+- [x] **Step 6: Run safe tests and input hash checks**：495/495 安全测试通过，16个固定包/12个DLL恢复通过；用户旧EXE、运行实例、HKLM32/64、原任务和现有共享PawnIO均未改变；提交 `feat: prepare verified sensor payload and explicit driver installation`。
 
 ### Task 3: Read-only hardware backend and managed process
 
@@ -123,7 +121,7 @@ $body=$body.Replace('$PSScriptRoot',"$repo\tools")
 - [x] **Step 3: Write controller process tests**：受控替身覆盖启动预算、断管/退出、协议拒绝、stderr洪流16KiB、心跳超龄/30秒退避、同PID刷新、需求取消与迟到准备、Job分配失败、至多一个后端；18断言失败后实现。
 - [x] **Step 4: Implement controller**：单后台worker串行拥有会话；Job kill-on-close、固定工作目录/父身份/租约、有界停止；UI调用立即撤销缓存，错误不续命旧值。19控制器测试通过。
 - [x] **Step 5: Build payload**：Roslyn/C#4/完整9分析器生产构建；24文件逐个GZip/round-trip校验，manifest最后发布；主程序真实25资源在独立scratch根逐文件校验；失败staging清理和旧载荷不变验证通过。
-- [x] **Step 6: Run adapter/controller/safe tests**：后端完整9分析器编译及35/35测试通过（0.203679s）；主程序本地net40/C#4/warnings-as-errors重建及516/516安全测试通过（12.8692845s）。两个csproj结构构建/配置、测试AssemblyInfo通过。无安装/无孤儿；主程序完整canonical分析器仍为Task5关卡。原PID23072在系统重启后不再存在，真实任务仅注册时间变化，EXE/HKLM/共享驱动未变；详见验收报告。
+- [x] **Step 6: Run adapter/controller/safe tests**：后端完整9分析器编译及35/35测试通过（0.203679s）；主程序本地net40/C#4/warnings-as-errors重建及516/516安全测试通过（12.8692845s）。两个csproj结构构建/配置、测试AssemblyInfo通过。无安装/无孤儿；主程序完整canonical分析器仍为Task5关卡。用户原实例在系统重启后不再存在，真实任务仅注册时间变化，EXE/HKLM/共享驱动未变；详见验收报告。
 
 ### Task 4: Temperature coordination, lifecycle and minimal UI
 
@@ -153,7 +151,7 @@ $body=$body.Replace('$PSScriptRoot',"$repo\tools")
 - [x] **Step 4: Update docs/version**：远端预定tag未占用，AssemblyVersion/FileVersion=3.0.8.4且Info=3.0.8.4-community.4；README/CHANGELOG/指南/验收报告写明成本、运行时、驱动确认和硬件边界，性能数据固定本地构建哈希且不冒充最终发布资产。
 - [x] **Step 5: Push and run canonical workflows**：本地提交经普通合并保留两套历史；Git 推送超时后按逐 blob/tree/commit 核对使用 Git Data API `force=false` 更新，远端与本地跟踪一致。canonical 显式失败逐一诊断：VS18 MSBuild 识别（`31482e8`）、受控子进程启动诊断（`4c23276`）、stdin UTF-8 BOM 兼容（`9e4876d`）。同提交 CI `39567029870`、无发布产物门禁 `39567068285` 与正式发布 `39567637435` 全部 `success`；正式运行记录主 554/554、后端 36/36、源码 2/2，并发布未占用标签 `v3.0.8.4-community.4`。
 - [x] **Step 6: Verify final release**：七项资产完整下载并逐项核对 GitHub 大小/`sha256:` 摘要、sidecar、便携包 18 文件/17 校验/6 许可、源码包 3 档案/10 条目；`latest` 与标签引用均指向 `9e4876d`，通过 `releases/latest/download` 实取 EXE/校验/公告字节与发布资产一致。最终 EXE 反射提取与正式 `packaged-payload.json` 逐文件一致（manifest `053a5e9b…`、24/25/14/9），并由 detached canonical 源码工作树验证器 exit 0 复核。随后以发布 EXE 隔离运行功能回归：76 项 → 75 通过/0 失败/1 通用 CPU 不可验证，退出 0，UI 调度 p95 0.5012 ms，自有子进程 0 残留、注册表覆盖与 scratch 载荷移除、安装器未执行、未使用真实用户缓存。
-- [x] **Step 7: Verify cleanup**：用户 EXE SHA `E13B…B4114` 与基线一致未被覆盖；HKLM 32/64 设置、共享 PawnIO 注册项与驱动字节一致；原任务仅登记时间差异，其余字段一致且未改写。会话 scratch 与系统中均无自有测试或采集孤儿进程；原 PID 23072 在系统重启后不复存在，仅编号被复用，不伪称原实例存活。证据分层记录：本地开发构建（性能 780 样本、`final-functional-3`）、canonical 发布产物（554/36、七项资产、最终载荷）、发布版隔离运行（75/0/1）与未授权/未验证硬件（受信驱动通用 CPU、AMD CPU/GPU、Intel GPU）互不替代。
+- [x] **Step 7: Verify cleanup**：用户旧 EXE 与本地基线哈希一致，未被覆盖；HKLM 32/64 设置、共享 PawnIO 注册项与驱动字节一致；原任务仅登记时间差异，其余字段一致且未改写。会话 scratch 与系统中均无自有测试或采集孤儿进程；用户原实例在系统重启后不复存在，未以复用编号冒充原实例存活。证据分层记录：本地开发构建（性能 780 样本、`final-functional-3`）、canonical 发布产物（554/36、七项资产、最终载荷）、发布版隔离运行（75/0/1）与未授权/未验证硬件（受信驱动通用 CPU、AMD CPU/GPU、Intel GPU）互不替代。
 
 ## Self-review (2026-10-18)
 

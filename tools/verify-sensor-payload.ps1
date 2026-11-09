@@ -64,9 +64,9 @@ if($null -eq $stream){throw 'The executable is missing its sensor manifest.'}
 try { $manifestBytes=Read-Bounded $stream 262144 } finally { $stream.Dispose() }
 Assert-FileBytes $manifestBytes $manifestPath 'manifest'
 $manifest=([Text.UTF8Encoding]::new($false,$true)).GetString($manifestBytes) | ConvertFrom-Json
-if((@($manifest.PSObject.Properties.Name|Sort-Object) -join ',') -cne 'files,protocol,version' -or $manifest.version -cne 'lhm-0.9.6-p1' -or $manifest.protocol -ne 1)
+if((@($manifest.PSObject.Properties.Name|Sort-Object) -join ',') -cne 'files,protocol,version' -or $manifest.version -cne 'lhm-0.9.6-p3' -or $manifest.protocol -ne 1)
 {throw 'Unsupported sensor payload manifest.'}
-$expectedCount=@($lock.assets).Count+@($lock.licenses).Count+6
+$expectedCount=@($lock.assets).Count+@($lock.licenses).Count+5
 if(@($manifest.files).Count -ne $expectedCount -or $expectedCount -gt 64){throw 'Sensor payload file count differs from the dependency lock.'}
 $seen=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 $expectedResources=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -77,6 +77,7 @@ $buildInfo=$null
 $total=0L
 foreach($file in $manifest.files)
 {
+    if($file.path -in @('PawnIO_setup.exe','DiskInfoToolkit.dll')){throw ('Optional/unused file is embedded: '+$file.path)}
     if((@($file.PSObject.Properties.Name|Sort-Object) -join ',') -cne 'length,path,resource,sha256' -or $file.path -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$' -or -not $seen.Add([string]$file.path))
     {throw 'Invalid or duplicate sensor payload path.'}
     if($file.resource -cne ($prefix+$file.path+'.gz') -or $file.sha256 -cnotmatch '^[0-9a-f]{64}$' -or [long]$file.length -lt 1 -or [long]$file.length -gt 16777216)
@@ -112,7 +113,6 @@ foreach($file in $manifest.files)
             $pinned=@($lock.assets|Where-Object {$_.name -ceq $file.path})
             $folder='build\sensors\lib'
             if($pinned.Count -eq 0){$pinned=@($lock.licenses|Where-Object {$_.name -ceq $file.path});$folder='build\sensors\inputs'}
-            if($pinned.Count -eq 0 -and $lock.installer.name -ceq $file.path){$pinned=@($lock.installer);$folder='build\sensors\inputs'}
             if($pinned.Count -ne 1 -or [long]$pinned[0].bytes -ne $file.length -or $pinned[0].sha256 -cne $file.sha256)
             {throw ('File is not pinned by the dependency lock: '+$file.path)}
             Assert-FileBytes $bytes (Join-Path $repo ($folder+'\'+$file.path)) ([string]$file.path+' pinned input')
@@ -129,6 +129,8 @@ if($staged.Count -ne $expectedResources.Count -or @($staged|Where-Object {$_.PSI
 if($null -eq $backendVersion -or $null -eq $buildInfo){throw 'Sensor payload is missing build metadata.'}
 if($buildInfo.payloadVersion -cne $manifest.version -or $buildInfo.protocol -ne 1 -or $buildInfo.compiler.name -cne 'csc.exe' -or $buildInfo.compiler.productVersion -notmatch '^\d+\.' -or $buildInfo.ruleset.sha256 -cne (Hash-File (Join-Path $repo 'src\AllRules.ruleset')))
 {throw 'Sensor build provenance does not match this build.'}
+if($buildInfo.installerDelivery -cne 'confirmed-download-or-local-file' -or @($buildInfo.runtimeLibraries).Count -ne @($lock.assets).Count -or (@($buildInfo.excludedRuntimeLibraries) -join ',') -cne 'DiskInfoToolkit.dll')
+{throw 'Sensor payload profile differs from the CPU/GPU-only runtime.'}
 $sourcePaths=@()
 foreach($folder in @('shared\Sensors','sensors')){$sourcePaths+=@(Get-ChildItem -LiteralPath (Join-Path $repo $folder) -File -Filter '*.cs'|ForEach-Object {$_.FullName.Substring($repo.Length+1)})}
 $sourcePaths+='sensors\Properties\AssemblyInfo.cs'

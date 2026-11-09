@@ -17,6 +17,7 @@ using System.Windows.Automation;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using WinMemoryCleaner.Sensors;
 
 #pragma warning disable 1591
 namespace WinMemoryCleaner.Test
@@ -38,7 +39,7 @@ namespace WinMemoryCleaner.Test
         private TextWriterTraceListener _bindingListener;
         private SourceLevels _oldBindingLevel;
 
-        private MainWindow CreateWindow(bool overlayEnabled = false,Func<IResourceMonitor> createMonitor=null,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction=null)
+        private MainWindow CreateWindow(bool overlayEnabled = false,Func<IResourceMonitor> createMonitor=null,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction=null,Func<SensorDriverState> inspectDriver=null,Func<bool,string,bool> beginDriver=null)
         {
             Assert.IsNotNull(typeof(MainWindow).GetProperty("Monitoring"), "The real shell must expose its independent monitoring model.");
             Assert.IsNotNull(typeof(MainWindow).GetMethod("SelectPage"), "Navigation must select the real overview/process/settings pages.");
@@ -78,13 +79,10 @@ namespace WinMemoryCleaner.Test
             PresentationTraceSources.DataBindingSource.Switch.Level=SourceLevels.Warning;
             PresentationTraceSources.DataBindingSource.Listeners.Add(_bindingListener);
             if(createMonitor==null)createMonitor=delegate { return new ResourceMonitor(new TemperatureSampler(null)); };
-            if(executeAction==null)_window=new MainWindow(createMonitor);
-            else
-            {
-                var constructor=typeof(MainWindow).GetConstructor(BindingFlags.Instance|BindingFlags.NonPublic,null,new[]{typeof(Func<IResourceMonitor>),typeof(Func<ProcessSnapshot,bool,bool,ProcessActionResult>)},null);
-                Assert.IsNotNull(constructor,"Window action tests require the safe action-injection seam; never use the native service.");
-                _window=(MainWindow)constructor.Invoke(new object[]{createMonitor,executeAction});
-            }
+            if(executeAction==null)executeAction=delegate { return new ProcessActionResult(ProcessActionOutcome.Failed,"Controlled window test: no native process action."); };
+            if(inspectDriver==null)inspectDriver=delegate { return new SensorDriverState(true,true,new Version(2,2,0),"Ready"); };
+            if(beginDriver==null)beginDriver=delegate(bool confirmed,string path) { Assert.IsFalse(confirmed,"This test must not request installation; the native installer is never used.");return false; };
+            _window=new MainWindow(createMonitor,executeAction,inspectDriver,beginDriver);
             return _window;
         }
 
@@ -331,6 +329,61 @@ namespace WinMemoryCleaner.Test
             Set(Monitoring, "OverlayEnabled", false); Drain();
             Assert.IsFalse(overlay.IsVisible);
             Assert.AreEqual(5, ((MainViewModel)window.DataContext).GetType().GetProperty("MemoryRefreshSeconds").GetValue(window.DataContext, null));
+        }
+
+        private static Memory DisplayMemory(int percent)
+        {
+            var memory=new Memory();memory.Physical.Used.Percentage=percent;return memory;
+        }
+
+        [TestCase(false,false)]
+        [TestCase(false,true)]
+        [TestCase(true,false)]
+        [TestCase(true,true)]
+        public void HiddenOrMinimizedShellDefersMemoryBindingsButKeepsLatestOverlayData(bool minimized,bool overlayEnabled)
+        {
+            var window=CreateProcessWindow();window.Show();Drain();
+            var cleaner=(MainViewModel)window.DataContext;
+            var bar=(ProgressBar)window.FindName("MemoryUsageBar");
+            cleaner.Computer.Memory=DisplayMemory(20);Drain();Assert.AreEqual(20,bar.Value);
+            window.Monitoring.OverlayEnabled=overlayEnabled;
+            if(minimized)window.WindowState=WindowState.Minimized;else window.Hide();
+            Drain();int notifications=0;
+            cleaner.Computer.PropertyChanged+=delegate { notifications++; };
+            Memory latest=null;
+            for(int i=40;i<60;i++) { latest=DisplayMemory(i);cleaner.Computer.Memory=latest; }
+            Drain();
+            Assert.AreEqual(0,notifications,"Hidden/minimized main-window bindings should receive no periodic memory notifications.");
+            Assert.AreSame(latest,cleaner.Computer.Memory,"Deferral must not leave the shared memory source stale.");
+            Assert.AreEqual("59%",window.Monitoring.MemoryText);
+            if(overlayEnabled)Assert.IsTrue(Application.Current.Windows.Cast<Window>().Any(w=>w is MonitoringOverlay&&w.IsVisible));
+            window.WindowState=WindowState.Normal;if(!window.IsVisible)window.Show();Drain();
+            Assert.AreEqual(1,notifications,"Restore must publish the latest snapshot exactly once, not replay intermediate samples.");
+            Assert.AreEqual(59,bar.Value,"The restored real binding must immediately display the current percentage.");
+            cleaner.Computer.Memory=DisplayMemory(87);Drain();
+            Assert.AreEqual(2,notifications);Assert.AreEqual(87,bar.Value);
+        }
+
+        [Test]
+        public void InitiallyHiddenShellPublishesTheLatestMemoryOnItsFirstShow()
+        {
+            var window=CreateProcessWindow();var cleaner=(MainViewModel)window.DataContext;int notifications=0;
+            cleaner.Computer.PropertyChanged+=delegate { notifications++; };
+            cleaner.Computer.Memory=DisplayMemory(32);Assert.AreEqual(0,notifications);
+            window.Show();Drain();
+            Assert.AreEqual(1,notifications);Assert.AreEqual(32,((ProgressBar)window.FindName("MemoryUsageBar")).Value);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void VisibleSettingsAndCompactCleanerKeepMemoryBindingsActive(bool compact)
+        {
+            var window=CreateProcessWindow();window.Show();Drain();var cleaner=(MainViewModel)window.DataContext;
+            if(compact)cleaner.CompactMode=true;else Select(2);
+            Drain();int notifications=0;cleaner.Computer.PropertyChanged+=delegate { notifications++; };
+            cleaner.Computer.Memory=DisplayMemory(67);Drain();
+            Assert.AreEqual(1,notifications,"A visible cleaner is a memory-display consumer even when detailed monitoring is paused.");
+            Assert.AreEqual("67%",window.Monitoring.MemoryText);
         }
 
         [Test]
@@ -651,27 +704,276 @@ namespace WinMemoryCleaner.Test
                 Assert.AreEqual(window.Monitoring.Labels["InstallSensorDriver"],button.Content);
                 Assert.AreEqual(window.Monitoring.TemperatureStatusText,status.Text);
                 Assert.IsTrue(button.IsEnabled);Assert.Greater(status.ActualWidth,80);
-                string prompt=null;double promptWidth=0;var cancel=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(20) };
-                cancel.Tick+=delegate
+                foreach(string source in new[]{"DownloadSensorInstallerNote","LocalSensorInstallerNote"})
                 {
-                    var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(w=>w is MessageDialog);
-                    if(dialog==null)return;
-                    cancel.Stop();Assert.AreSame(window,dialog.Owner);
-                    prompt=(string)dialog.DataContext.GetType().GetProperty("Message").GetValue(dialog.DataContext,null);
-                    dialog.UpdateLayout();promptWidth=dialog.ActualWidth;
-                    dialog.DialogResult=false;
-                };
-                cancel.Start();
-                try { button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); }
-                finally { cancel.Stop(); }
-                Assert.AreEqual(window.Monitoring.Labels["ConfirmSensorDriver"],prompt);
-                StringAssert.Contains("PawnIO 2.1.0",prompt);StringAssert.Contains("Secure Boot",prompt);
-                Assert.IsNull(typeof(MonitoringViewModel).GetField("_installer",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(window.Monitoring));
-                Assert.IsFalse(window.Monitoring.IsInstallingDriver);
-                Assert.LessOrEqual(promptWidth,Math.Min(600,SystemParameters.WorkArea.Width-32),"Driver confirmation must wrap into a readable width.");
+                    string prompt=null;double promptWidth=0;var cancel=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(20) };
+                    cancel.Tick+=delegate
+                    {
+                        var dialog=Application.Current.Windows.Cast<Window>().FirstOrDefault(w=>w is MessageDialog);
+                        if(dialog==null)return;
+                        cancel.Stop();Assert.AreSame(window,dialog.Owner);
+                        prompt=(string)dialog.DataContext.GetType().GetProperty("Message").GetValue(dialog.DataContext,null);
+                        dialog.UpdateLayout();promptWidth=dialog.ActualWidth;
+                        dialog.DialogResult=false;
+                    };
+                    cancel.Start();
+                    try
+                    {
+                        if(source=="DownloadSensorInstallerNote")button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                        else Assert.IsFalse((bool)typeof(MainWindow).GetMethod("ConfirmTemperatureDriver",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(window,new object[]{source}));
+                    }
+                    finally { cancel.Stop(); }
+                    Assert.AreEqual(window.Monitoring.Labels[source]+Environment.NewLine+Environment.NewLine+window.Monitoring.Labels["ConfirmSensorDriver"],prompt);
+                    StringAssert.Contains("PawnIO 2.2.0",prompt);StringAssert.Contains("Secure Boot",prompt);
+                    Assert.IsNull(typeof(MonitoringViewModel).GetField("_installer",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(window.Monitoring));
+                    Assert.IsFalse(window.Monitoring.IsInstallingDriver);
+                    Assert.LessOrEqual(promptWidth,Math.Min(600,SystemParameters.WorkArea.Width-32),"Driver confirmation must wrap into a readable width.");
+                }
             }
             window.Close();Drain();Assert.IsFalse(window.Monitoring.CanInstallDriver);
             Assert.IsFalse(window.Monitoring.BeginDriverInstallation(true));
+        }
+
+        private static bool TemperaturePromptPending(MainWindow window)
+        { return (int)typeof(MainWindow).GetField("_temperaturePromptPending",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(window)!=0; }
+
+        private static void ClickTemperatureToggle(MainWindow window,string name,bool enabled)
+        {
+            var toggle=(CheckBox)window.FindName(name);Assert.IsNotNull(toggle);
+            toggle.IsChecked=enabled;toggle.GetBindingExpression(ToggleButton.IsCheckedProperty).UpdateSource();
+            toggle.RaiseEvent(new RoutedEventArgs(ButtonBase.ClickEvent));
+        }
+
+        private static IList<string> ExerciseTemperaturePrompt(MainWindow window,Action trigger,bool confirmed,Action<MessageDialog> inspect=null)
+        {
+            var prompts=new List<string>();Exception failure=null;
+            var timer=new DispatcherTimer { Interval=TimeSpan.FromMilliseconds(20) };
+            EventHandler tick=delegate
+            {
+                var dialog=Application.Current.Windows.Cast<Window>().OfType<MessageDialog>().FirstOrDefault(w=>w.Owner==window);
+                if(dialog==null||!dialog.IsVisible||!dialog.IsLoaded)return;
+                try
+                {
+                    prompts.Add(((MessageViewModel)dialog.DataContext).Message);
+                    if(inspect!=null)inspect(dialog);
+                }
+                catch(Exception error) { failure=error; }
+                finally { if(dialog.IsVisible)dialog.DialogResult=failure==null&&confirmed; }
+            };
+            timer.Tick+=tick;timer.Start();
+            try
+            {
+                trigger();Assert.IsTrue(Until(delegate { return !TemperaturePromptPending(window); },6000),"The explicit-action driver check must finish.");
+                Drain();
+            }
+            finally
+            {
+                timer.Stop();timer.Tick-=tick;
+                foreach(var dialog in Application.Current.Windows.Cast<Window>().OfType<MessageDialog>().Where(w=>w.Owner==window).ToArray())dialog.Close();
+            }
+            Assert.IsNull(failure,"Controlled dialog inspection failed: "+failure);return prompts;
+        }
+
+        private static void InvalidateTemperaturePrompt(MainWindow window,string reason)
+        {
+            switch(reason)
+            {
+                case "uncheck": ClickTemperatureToggle(window,"CpuTemperatureToggle",false);break;
+                case "page": window.SelectPage(0);break;
+                case "hide": window.Hide();break;
+                case "minimize": window.WindowState=WindowState.Minimized;break;
+                case "close": window.Close();break;
+                case "dispose": window.Dispose();break;
+                default: Assert.Fail("Unknown controlled prompt invalidation.");break;
+            }
+        }
+
+        [TestCase("CpuTemperatureToggle",false,"zh-Hans")]
+        [TestCase("CpuTemperatureToggle",true,"zh-Hans")]
+        [TestCase("CpuTemperatureToggle",false,"en")]
+        [TestCase("CpuTemperatureToggle",true,"de")]
+        [TestCase("OverlayToggle",false,"zh-Hans")]
+        [TestCase("OverlayToggle",true,"en")]
+        public void TemperatureEnable_MissingDriverConfirmsOnceAndPreservesDisplayChoice(string trigger,bool confirmed,string culture)
+        {
+            int checks=0,installs=0,inspectionThread=0;
+            var window=CreateWindow(inspectDriver:delegate
+            {
+                inspectionThread=Thread.CurrentThread.ManagedThreadId;Interlocked.Increment(ref checks);
+                return new SensorDriverState(false,false,null,"NotInstalled");
+            },beginDriver:delegate(bool consent,string path) { Assert.IsTrue(consent);Assert.IsNull(path);installs++;return true; });
+            window.Show();Select(2);window.Width=window.MinWidth;window.Height=window.MinHeight;
+            if(trigger=="OverlayToggle")window.Monitoring.ShowCpuTemperature=true;
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo(culture));Drain();
+            var prompts=ExerciseTemperaturePrompt(window,delegate
+            {
+                ClickTemperatureToggle(window,trigger,true);ClickTemperatureToggle(window,trigger,true);
+            },confirmed,delegate(MessageDialog dialog)
+            {
+                Assert.AreSame(window,dialog.Owner);Assert.AreEqual(window.Monitoring.Labels["ConfirmSensorDriverTitle"],dialog.Title);
+                dialog.UpdateLayout();Assert.Greater(dialog.ActualWidth,200);
+                Assert.LessOrEqual(dialog.ActualWidth,Math.Min(600,SystemParameters.WorkArea.Width-32));
+                Assert.LessOrEqual(dialog.ActualHeight,SystemParameters.WorkArea.Height);
+            });
+            Assert.AreEqual(1,checks);Assert.AreNotEqual(Thread.CurrentThread.ManagedThreadId,inspectionThread,"Trust inspection must not block the UI thread.");
+            Assert.AreEqual(1,prompts.Count);Assert.AreEqual(confirmed?1:0,installs);
+            Assert.AreEqual(window.Monitoring.Labels["TemperatureDriverNeeded"]+Environment.NewLine+Environment.NewLine+window.Monitoring.Labels["DownloadSensorInstallerNote"]+Environment.NewLine+Environment.NewLine+window.Monitoring.Labels["ConfirmSensorDriver"],prompts[0]);
+            StringAssert.Contains("PawnIO 2.2.0",prompts[0]);Assert.IsTrue(window.Monitoring.ShowCpuTemperature);
+            if(trigger=="OverlayToggle")Assert.IsTrue(window.Monitoring.OverlayEnabled);
+            Assert.IsNull(typeof(MonitoringViewModel).GetField("_installer",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(window.Monitoring),"Only the fake installer delegate may be called.");
+        }
+
+        [TestCase("AccessDenied","TemperatureDriverAdministrator","zh-Hans")]
+        [TestCase("AccessDenied","TemperatureDriverAdministrator","en")]
+        [TestCase("DriverNotReady","TemperatureDriverNotReady","zh-Hans")]
+        [TestCase("UnverifiedDriver","TemperatureDriverUnverified","de")]
+        [TestCase("KeepExistingDriver","TemperatureDriverUnverified","en")]
+        [TestCase("Unknown","TemperatureDriverInspectionFailed","zh-Hans")]
+        [TestCase("NotInstalled","TemperatureDriverInspectionFailed","en")]
+        public void TemperatureEnable_ExistingOrUncertainDriverOnlyExplainsStatus(string status,string messageKey,string culture)
+        {
+            int installs=0;
+            var window=CreateWindow(inspectDriver:delegate { return new SensorDriverState(false,true,null,status); },
+                beginDriver:delegate { installs++;return true; });
+            window.Show();Select(2);Localizer.Language=new Language(CultureInfo.GetCultureInfo(culture));Drain();
+            var prompts=ExerciseTemperaturePrompt(window,delegate { ClickTemperatureToggle(window,"CpuTemperatureToggle",true); },true,delegate(MessageDialog dialog)
+            {
+                var model=(MessageViewModel)dialog.DataContext;
+                Assert.AreEqual(window.Monitoring.Labels["TemperatureDriverTitle"],dialog.Title);
+                Assert.AreEqual(window.Monitoring.Labels["TemperatureDriverAcknowledge"],model.RightButton.Key);
+                Assert.IsNull(model.LeftButton.Value,"An explanatory notice must not offer installation.");
+            });
+            Assert.AreEqual(1,prompts.Count);Assert.AreEqual(window.Monitoring.Labels[messageKey],prompts[0]);Assert.AreEqual(0,installs);
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void TemperatureEnable_FailedInspectionNeverStartsInstallation(bool throws)
+        {
+            int installs=0;
+            var window=CreateWindow(inspectDriver:delegate { if(throws)throw new InvalidOperationException("Controlled inspection failure");return null; },
+                beginDriver:delegate { installs++;return true; });
+            window.Show();Select(2);Drain();
+            var prompts=ExerciseTemperaturePrompt(window,delegate { ClickTemperatureToggle(window,"CpuTemperatureToggle",true); },true);
+            Assert.AreEqual(1,prompts.Count);Assert.AreEqual(window.Monitoring.Labels["TemperatureDriverInspectionFailed"],prompts[0]);Assert.AreEqual(0,installs);
+        }
+
+        [Test]
+        public void TemperatureEnable_ReadyDriverDoesNotPromptOrInstall()
+        {
+            int checks=0,installs=0;
+            var window=CreateWindow(inspectDriver:delegate { checks++;return new SensorDriverState(true,true,new Version(2,2,0),"Ready"); },
+                beginDriver:delegate { installs++;return true; });
+            window.Show();Select(2);Drain();
+            var prompts=ExerciseTemperaturePrompt(window,delegate { ClickTemperatureToggle(window,"CpuTemperatureToggle",true); },true);
+            Assert.AreEqual(1,checks);Assert.AreEqual(0,prompts.Count);Assert.AreEqual(0,installs);
+        }
+
+        [Test]
+        public void TemperatureEnable_StartupRefreshAndNonEnablingActionsNeverInspectOrInstall()
+        {
+            int checks=0,installs=0;
+            var window=CreateWindow(true,inspectDriver:delegate { checks++;return new SensorDriverState(false,false,null,"NotInstalled"); },
+                beginDriver:delegate { installs++;return true; });
+            var prompts=ExerciseTemperaturePrompt(window,delegate
+            {
+                window.Show();Select(2);Drain();window.Monitoring.RefreshNow();
+                window.Monitoring.ShowCpuTemperature=false;window.Monitoring.ShowCpuTemperature=true;Drain();
+                ClickTemperatureToggle(window,"CpuTemperatureToggle",false);
+                ClickTemperatureToggle(window,"OverlayToggle",false);ClickTemperatureToggle(window,"OverlayToggle",true);
+                window.Hide();ClickTemperatureToggle(window,"CpuTemperatureToggle",true);
+                window.Show();window.WindowState=WindowState.Minimized;ClickTemperatureToggle(window,"CpuTemperatureToggle",true);
+                window.WindowState=WindowState.Normal;Select(0);ClickTemperatureToggle(window,"CpuTemperatureToggle",true);
+                window.Close();ClickTemperatureToggle(window,"CpuTemperatureToggle",true);
+            },true);
+            Assert.AreEqual(0,checks);Assert.AreEqual(0,installs);Assert.AreEqual(0,prompts.Count);
+        }
+
+        [TestCase("uncheck")]
+        [TestCase("page")]
+        [TestCase("hide")]
+        [TestCase("minimize")]
+        [TestCase("close")]
+        [TestCase("dispose")]
+        public void TemperatureEnable_LateInspectionCannotPromptAfterUserLeaves(string reason)
+        {
+            int checks=0,installs=0;
+            using(var inspecting=new ManualResetEvent(false))
+            using(var release=new ManualResetEvent(false))
+            {
+                var window=CreateWindow(inspectDriver:delegate
+                {
+                    Interlocked.Increment(ref checks);inspecting.Set();release.WaitOne(5000);
+                    return new SensorDriverState(false,false,null,"NotInstalled");
+                },beginDriver:delegate { installs++;return true; });
+                window.Show();Select(2);Drain();
+                var prompts=ExerciseTemperaturePrompt(window,delegate
+                {
+                    ClickTemperatureToggle(window,"CpuTemperatureToggle",true);
+                    try
+                    {
+                        Assert.IsTrue(inspecting.WaitOne(2000));ClickTemperatureToggle(window,"CpuTemperatureToggle",true);
+                        InvalidateTemperaturePrompt(window,reason);
+                    }
+                    finally { release.Set(); }
+                },true);
+                Assert.AreEqual(1,checks);Assert.AreEqual(0,installs);Assert.AreEqual(0,prompts.Count);
+            }
+        }
+
+        [TestCase("uncheck")]
+        [TestCase("page")]
+        [TestCase("close")]
+        public void TemperatureEnable_ConfirmationRechecksCurrentWindowState(string reason)
+        {
+            int installs=0;
+            var window=CreateWindow(inspectDriver:delegate { return new SensorDriverState(false,false,null,"NotInstalled"); },
+                beginDriver:delegate { installs++;return true; });
+            window.Show();Select(2);Drain();
+            var prompts=ExerciseTemperaturePrompt(window,delegate { ClickTemperatureToggle(window,"CpuTemperatureToggle",true); },true,
+                delegate { InvalidateTemperaturePrompt(window,reason); });
+            Assert.AreEqual(1,prompts.Count);Assert.AreEqual(0,installs);
+        }
+
+        [TestCase("zh-Hans")]
+        [TestCase("en")]
+        [TestCase("de")]
+        public void TemperatureInstallerChoicesRemainBoundAndFitAtMinimumSize(string culture)
+        {
+            var window=CreateWindow();window.Show();Select(2);Drain();
+            window.Width=window.MinWidth;window.Height=window.MinHeight;
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo(culture));Drain();window.UpdateLayout();
+            var buttons=new[]{(Button)window.FindName("InstallTemperatureDriver"),(Button)window.FindName("SelectTemperatureDriverInstaller"),(Button)window.FindName("CancelTemperatureDriverPreparation")};
+            string[] labels={"InstallSensorDriver","SelectSensorInstaller","CancelSensorPreparation"};
+            var panel=buttons[0].Parent as WrapPanel;Assert.IsNotNull(panel);
+            var bounds=new List<Rect>();
+            for(int i=0;i<buttons.Length;i++)
+            {
+                Button button=buttons[i];Assert.IsNotNull(button);Assert.AreSame(panel,button.Parent);
+                Assert.AreEqual(window.Monitoring.Labels[labels[i]],button.Content);
+                Assert.AreEqual(BindingStatus.Active,button.GetBindingExpression(ContentControl.ContentProperty).Status);
+                Assert.AreEqual(BindingStatus.Active,button.GetBindingExpression(UIElement.IsEnabledProperty).Status);
+                Assert.AreEqual(i!=2,button.IsEnabled);
+                Rect rect=button.TransformToAncestor(panel).TransformBounds(new Rect(new Point(),button.RenderSize));
+                Assert.Greater(rect.Width,40);Assert.Greater(rect.Height,20);
+                Assert.GreaterOrEqual(rect.Left,-1);Assert.LessOrEqual(rect.Right,panel.ActualWidth+1);
+                foreach(Rect earlier in bounds){Rect intersection=Rect.Intersect(earlier,rect);Assert.IsTrue(intersection.IsEmpty||intersection.Width<=0||intersection.Height<=0,"Installer buttons must not overlap.");}
+                bounds.Add(rect);
+            }
+            Assert.IsFalse(window.Monitoring.CanCancelDriverPreparation);
+            buttons[2].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.IsNull(typeof(MonitoringViewModel).GetField("_installer",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(window.Monitoring));
+            Assert.AreEqual(1,Descendants<TextBlock>(window).Count(t=>t.Text==window.Monitoring.Labels["SensorInstallerSourceNote"]));
+            if(Environment.GetEnvironmentVariable("WMC_CAPTURE_INSTALLER_SETTINGS")=="1")
+            {
+                var settings=(ScrollViewer)window.FindName("SettingsPage");
+                settings.ScrollToVerticalOffset(Math.Max(0,panel.TransformToAncestor((FrameworkElement)settings.Content).Transform(new Point()).Y-48));
+                Drain();window.UpdateLayout();
+                var bitmap=new System.Windows.Media.Imaging.RenderTargetBitmap((int)Math.Ceiling(window.ActualWidth),(int)Math.Ceiling(window.ActualHeight),96,96,PixelFormats.Pbgra32);
+                bitmap.Render(window);
+                var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                using(var stream=File.Create(Path.Combine(TestContext.CurrentContext.WorkDirectory,"installer-settings-"+culture+".png")))encoder.Save(stream);
+            }
         }
 
         private static IEnumerable<T> Descendants<T>(DependencyObject root) where T : DependencyObject
@@ -823,6 +1125,102 @@ namespace WinMemoryCleaner.Test
         private static string SelectedDisplay(ComboBox picker)
         {
             var choice=picker.SelectedItem as DisplayChoice;return choice==null?null:choice.Id;
+        }
+
+        [Test]
+        public void ReleaseLayout_ScrollContentKeepsAGutterAtTheMinimum()
+        {
+            var window=CreateProcessWindow();window.Show();window.Width=window.MinWidth;window.Height=window.MinHeight;
+            foreach(int page in new[]{0,2})
+            {
+                Select(page);Drain();window.UpdateLayout();
+                var scroll=(ScrollViewer)window.FindName(page==0?"OverviewPage":"SettingsPage");
+                var content=(FrameworkElement)scroll.Content;
+                Assert.GreaterOrEqual(content.Margin.Right,10,"Cards need a gutter before the scrollbar.");
+            }
+        }
+
+        [Test]
+        public void ReleaseLayout_CompactSummaryShowsCurrentMemoryWithoutRepeatingExpandedCard()
+        {
+            var window=CreateProcessWindow();window.Show();Drain();var cleaner=(MainViewModel)window.DataContext;
+            var usage=window.FindName("CompactMemoryUsage") as TextBlock;
+            Assert.IsNotNull(usage,"Compact mode must show usage, not only installed capacity.");
+            Assert.AreEqual(Visibility.Collapsed,usage.Visibility,"Expanded overview already contains the memory card.");
+            cleaner.CompactMode=true;
+            cleaner.Computer.Memory=new Memory(new Structs.Windows.MemoryStatusEx { TotalPhys=16L*1024*1024*1024,AvailPhys=6L*1024*1024*1024,MemoryLoad=62 });
+            Drain();window.UpdateLayout();StringAssert.Contains("62%",usage.Text);Assert.IsTrue(usage.IsVisible);
+            cleaner.Computer.Memory=new Memory(new Structs.Windows.MemoryStatusEx { TotalPhys=16L*1024*1024*1024,AvailPhys=4L*1024*1024*1024,MemoryLoad=75 });
+            Drain();StringAssert.Contains("75%",usage.Text);
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo("en"));Drain();
+            StringAssert.Contains("Physical memory",usage.Text);Assert.Less(window.ActualHeight,350);
+        }
+
+        [Test]
+        public void ReleaseLayout_EmptyActionFeedbackDoesNotReserveSpace()
+        {
+            var window=CreateProcessWindow();ShowProcesses(window);
+            var status=Descendants<TextBlock>(window).Single(t=>
+            {
+                var binding=BindingOperations.GetBinding(t,TextBlock.TextProperty);
+                return binding!=null&&binding.Path!=null&&binding.Path.Path=="ActionStatus";
+            });
+            Assert.AreEqual(Visibility.Collapsed,status.Visibility);
+            window.Monitoring.ActionStatus="Controlled feedback";Drain();Assert.AreEqual(Visibility.Visible,status.Visibility);
+            window.Monitoring.ActionStatus=string.Empty;Drain();Assert.AreEqual(Visibility.Collapsed,status.Visibility);
+        }
+
+        [Test]
+        public void ReleaseLayout_EnglishNumericHeadersWrapWithoutClipping()
+        {
+            var window=CreateProcessWindow();ShowProcesses(window);window.Width=window.MinWidth;window.Height=window.MinHeight;
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo("en"));Drain();window.UpdateLayout();
+            var headers=Descendants<DataGridColumnHeader>(window).Where(h=>h.Column!=null&&h.Column.DisplayIndex>0).ToList();
+            foreach(var header in headers)
+            {
+                var label=Descendants<TextBlock>(header).FirstOrDefault(t=>t.Text==(string)header.Column.Header);
+                Assert.IsNotNull(label);Assert.AreEqual(TextWrapping.Wrap,label.TextWrapping,label.Text);
+                var edge=label.TranslatePoint(new Point(label.ActualWidth,0),header);
+                Assert.LessOrEqual(edge.X,header.ActualWidth-header.Padding.Right+1,label.Text);
+            }
+            Assert.Greater(((DataGrid)window.FindName("ProcessGrid")).ActualHeight,70);
+        }
+
+        [Test]
+        public void ReleaseLayout_CompactToggleUsesAContrastingThemedOutline()
+        {
+            var window=CreateProcessWindow();window.Show();
+            Application.Current.Resources["SecondaryDisabled"]=Brushes.DimGray;Drain();
+            var toggle=Descendants<CheckBox>(window).Single(c=>
+            {
+                var binding=BindingOperations.GetBinding(c,ToggleButton.IsCheckedProperty);
+                return binding!=null&&binding.Path!=null&&binding.Path.Path=="CompactMode";
+            });
+            Assert.AreSame(Brushes.DimGray,toggle.BorderBrush,"The compact toggle outline must remain visible in the light theme.");
+        }
+
+        [Test]
+        public void ReleaseLayout_CancelledActionFollowsLanguageChanges()
+        {
+            var window=CreateProcessWindow();ShowProcesses(window);SelectProcess(window);Confirm(window,false);
+            Assert.AreEqual(window.Monitoring.Labels["NotConfirmed"],window.Monitoring.ActionStatus);
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo("en"));Drain();
+            Assert.AreEqual(window.Monitoring.Labels["NotConfirmed"],window.Monitoring.ActionStatus);
+        }
+
+        [Test]
+        public void ReleaseLayout_OptimizationStateImmediatelyNotifiesAvailability()
+        {
+            var window=CreateProcessWindow();window.Show();Drain();var cleaner=(MainViewModel)window.DataContext;
+            int changes=0;cleaner.PropertyChanged+=delegate(object sender,System.ComponentModel.PropertyChangedEventArgs e) { if(e.PropertyName=="CanOptimize")changes++; };
+            var button=(Button)window.FindName("Optimize");Assert.IsTrue(button.IsEnabled);
+            try
+            {
+                cleaner.IsOptimizationRunning=true;Drain();Assert.Greater(changes,0,"The worker state must notify command availability.");
+                Assert.IsFalse(button.IsEnabled);
+            }
+            finally { cleaner.IsOptimizationRunning=false;Drain(); }
+            Assert.IsTrue(button.IsEnabled);
         }
     }
 }

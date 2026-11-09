@@ -134,6 +134,7 @@
     <Compile Include="Core\Migrator.cs" />
     <Compile Include="Core\ObservableObject.cs" />
     <Compile Include="Core\OptimizationTiming.cs" />
+    <Compile Include="Core\OptimizationRequestGate.cs" />
     <Compile Include="Core\Settings.cs" />
     <Compile Include="Core\StartupTask.cs" />
     <Compile Include="Core\Structs.cs" />
@@ -215,16 +216,19 @@
     <EmbeddedResource Include="Test\SensorBackendChild.cs"><LogicalName>WinMemoryCleaner.SensorBackendChild.cs</LogicalName></EmbeddedResource>
   </ItemGroup>
   <!-- Sensor payload staged by tools/build-sensors.ps1; build-community.ps1 runs it before MSBuild. -->
+  <PropertyGroup>
+    <SensorPayloadDirectory Condition=" '$(SensorPayloadDirectory)' == '' ">$(MSBuildProjectDirectory)\..\build\sensors\payload</SensorPayloadDirectory>
+  </PropertyGroup>
   <ItemGroup>
-    <EmbeddedResource Include="..\build\sensors\payload\*.gz">
+    <EmbeddedResource Include="$(SensorPayloadDirectory)\*.gz">
       <LogicalName>WinMemoryCleaner.Sensors.Payload.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
-    <EmbeddedResource Include="..\build\sensors\payload\sensors-payload.manifest.json">
+    <EmbeddedResource Include="$(SensorPayloadDirectory)\sensors-payload.manifest.json">
       <LogicalName>WinMemoryCleaner.Sensors.Payload.manifest.json</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
   <Target Name="EnsureSensorPayload" BeforeTargets="PrepareForBuild">
-    <Error Condition="!Exists('..\build\sensors\payload\sensors-payload.manifest.json')" Text="Missing verified sensor payload. Run tools\build-sensors.ps1 (build-community.ps1 does this) before building." />
+    <Error Condition="!Exists('$(SensorPayloadDirectory)\sensors-payload.manifest.json')" Text="Missing verified sensor payload. Run tools\build-sensors.ps1 (build-community.ps1 does this) before building." />
   </Target>
   <ItemGroup>
     <Content Include="..\README.md">

@@ -44,6 +44,8 @@ namespace WinMemoryCleaner
         private Thread _worker;
         private bool _disposed;
         private bool _demand;
+        private bool _cpuRequired;
+        private bool _gpuRequired;
         private int _refresh = 2;
         private long _retryAt;
         private int _stderrCount;
@@ -74,7 +76,7 @@ namespace WinMemoryCleaner
         string ISensorBackend.DriverStatus { get { return DriverStatus; } }
         string ISensorBackend.Diagnostic { get { return Diagnostic; } }
         void ISensorBackend.Configure(int seconds) { Configure(seconds); }
-        void ISensorBackend.GetSnapshot(out MetricValue cpu,out MetricValue gpu) { GetSnapshot(out cpu,out gpu); }
+        void ISensorBackend.GetSnapshot(bool cpuRequired,bool gpuRequired,out MetricValue cpu,out MetricValue gpu) { GetSnapshot(cpuRequired,gpuRequired,out cpu,out gpu); }
         void ISensorBackend.Suspend() { Suspend(); }
         void ISensorBackend.ResetDriverState() { ResetDriverState(); }
 
@@ -101,17 +103,34 @@ namespace WinMemoryCleaner
             NotifyWorker();
         }
 
-        /// <summary>Reads cached state and records demand; the actual backend starts asynchronously.</summary>
+        /// <summary>Compatibility seam requesting both metrics.</summary>
         internal void GetSnapshot(out MetricValue cpu, out MetricValue gpu)
+        { GetSnapshot(true, true, out cpu, out gpu); }
+
+        /// <summary>Records missing metrics; preparation and trust inspection stay on the worker.</summary>
+        internal void GetSnapshot(bool cpuRequired, bool gpuRequired, out MetricValue cpu, out MetricValue gpu)
         {
             lock (_gate)
             {
                 if (!_disposed)
                 {
-                    _demand = true;
-                    if (_session == null && String.Equals(_backend, "Disabled", StringComparison.Ordinal)) SetWaitingLocked();
-                    EnsureWorkerLocked();
-                    EvaluateLocked();
+                    bool changed = _cpuRequired != cpuRequired || _gpuRequired != gpuRequired;
+                    _cpuRequired = cpuRequired;
+                    _gpuRequired = gpuRequired;
+                    _demand = cpuRequired || gpuRequired;
+                    if (changed)
+                    {
+                        _retryAt = 0;
+                        if (_session != null) _session.Abandoned = true;
+                        SetWaitingLocked();
+                        Monitor.PulseAll(_gate);
+                    }
+                    if (_demand)
+                    {
+                        if (_session == null && String.Equals(_backend, "Disabled", StringComparison.Ordinal)) SetWaitingLocked();
+                        EnsureWorkerLocked();
+                        EvaluateLocked();
+                    }
                 }
                 cpu = _cpu;
                 gpu = _gpu;
@@ -123,8 +142,8 @@ namespace WinMemoryCleaner
         {
             lock (_gate)
             {
-                if (_disposed) return;
-                _demand = false;
+                if (_disposed || (!_demand && String.Equals(_backend, "Disabled", StringComparison.Ordinal))) return;
+                _demand = _cpuRequired = _gpuRequired = false;
                 if (_session != null) _session.Abandoned = true;
                 SetDisabledLocked();
             }
@@ -156,7 +175,7 @@ namespace WinMemoryCleaner
             {
                 if (_disposed) return;
                 _disposed = true;
-                _demand = false;
+                _demand = _cpuRequired = _gpuRequired = false;
                 if (_session != null) _session.Abandoned = true;
                 SetDisabledLocked();
                 Monitor.PulseAll(_gate);
@@ -220,9 +239,12 @@ namespace WinMemoryCleaner
                 {
                     if (_disposed || !_demand) { _worker = null; Monitor.PulseAll(_gate); return; }
                     long now = _clock();
+                    // Backoff needs no resident polling thread; a later requested sample restarts it.
+                    if (_session == null && _retryAt != 0 && now < _retryAt)
+                    { _worker = null; Monitor.PulseAll(_gate); return; }
                     if (_session == null && (_retryAt == 0 || now >= _retryAt))
                     {
-                        session = new Session(Guid.NewGuid().ToString("N"), _refresh);
+                        session = new Session(Guid.NewGuid().ToString("N"), _refresh, _cpuRequired, _gpuRequired);
                         _session = session;
                         _retryAt = 0;
                         ClearStderrLocked();
@@ -240,9 +262,21 @@ namespace WinMemoryCleaner
             try
             {
                 SensorDriverState driver = InspectDriver();
-                session.CpuEnabled = driver.CpuAllowed;
-                lock (_gate) { if (!_disposed) _driver = driver.Status; }
-                if (!IsCurrent(session)) { session.Abandoned = true; return; }
+                lock (_gate)
+                {
+                    if (!IsCurrentLocked(session)) return;
+                    session.CpuEnabled = session.CpuRequired && driver.CpuAllowed;
+                    _driver = driver.Status;
+                    if (!session.GpuRequired && !session.CpuEnabled)
+                    {
+                        // There is nothing this backend can currently add. Do not extract or launch it.
+                        _cpu = DriverUnavailable(driver.Status);
+                        _gpu = MetricValue.Missing(MetricStatus.Disabled, DisabledReason);
+                        _backend = "WaitingForDriver";
+                        _retryAt = _clock() + RetryTicks;
+                        return;
+                    }
+                }
                 session.Lease = _prepare();
                 if (!IsCurrent(session)) return;
                 StartProcess(session);
@@ -263,6 +297,13 @@ namespace WinMemoryCleaner
             }
             catch (Exception) { }
             return new SensorDriverState(false, true, null, "InspectionFailed");
+        }
+
+        private static MetricValue DriverUnavailable(string status)
+        {
+            MetricStatus metric = String.Equals(status, "AccessDenied", StringComparison.Ordinal) ? MetricStatus.AccessDenied
+                : String.Equals(status, "InspectionFailed", StringComparison.Ordinal) ? MetricStatus.Error : MetricStatus.Unsupported;
+            return MetricValue.Missing(metric, Source + ": trusted CPU driver unavailable; driver=" + status);
         }
 
         private void StartProcess(Session session)
@@ -365,8 +406,9 @@ namespace WinMemoryCleaner
             // Rejected frames are duplicates, out-of-order or implausible timestamps; they must not refresh the reading.
             if (!session.Freshness.Accept(message, DateTime.UtcNow, _clock(), session.Refresh)) return true;
             session.Started = true;
-            _cpu = Reading(message, true);
-            _gpu = Reading(message, false);
+            _cpu = !session.CpuRequired ? MetricValue.Missing(MetricStatus.Disabled, DisabledReason)
+                : session.CpuEnabled ? Reading(message, true) : DriverUnavailable(_driver);
+            _gpu = session.GpuRequired ? Reading(message, false) : MetricValue.Missing(MetricStatus.Disabled, DisabledReason);
             _backend = "Running";
             return true;
         }
@@ -518,7 +560,7 @@ namespace WinMemoryCleaner
                 {
                     if (ReferenceEquals(_session, session)) _session = null;
                     _processId = 0;
-                    if (!faulted) SetWaitingLocked();
+                    // Preserve the state already published by cancellation, reset, failure or driver backoff.
                     Monitor.PulseAll(_gate);
                 }
             }
@@ -575,6 +617,8 @@ namespace WinMemoryCleaner
             internal int Revision;
             internal int ObservedRevision;
             internal int ProcessId;
+            internal readonly bool CpuRequired;
+            internal readonly bool GpuRequired;
             internal bool CpuEnabled;
             internal bool Handshake;
             internal bool Started;
@@ -588,7 +632,8 @@ namespace WinMemoryCleaner
             internal Stream Error;
             internal Thread OutputThread;
             internal Thread ErrorThread;
-            internal Session(string id, int refresh) { Id = id; Refresh = refresh; }
+            internal Session(string id, int refresh, bool cpuRequired, bool gpuRequired)
+            { Id = id; Refresh = refresh; CpuRequired = cpuRequired; GpuRequired = gpuRequired; }
         }
     }
 }

@@ -24,15 +24,20 @@ namespace WinMemoryCleaner.Sensors
     /// <summary>Read-only verification. Neither registry presence nor a signature alone proves the driver mode.</summary>
     internal static class SensorDriverTrust
     {
-        private const string OfficialDriverHash = "f92de04e5a02256e86ffa1b4252fe669282198b7329227f40e51bca9267d133d";
-        private const string OfficialInstallerHash = "a3a46226c5e2824f4cdd42be0eecbabfc672c86f7889710f5ab1e6ad385b47a0";
+        private const string OfficialDriver210Hash = "f92de04e5a02256e86ffa1b4252fe669282198b7329227f40e51bca9267d133d";
+        private const string OfficialDriver220Hash = "fca6e7d58b0cf38dbb913a2b9e532f48629145d395f454b16a9f58e97b8d3940";
+        private static readonly Version Driver210Version = new Version(2, 1, 0);
+        private static readonly Version Driver220Version = new Version(2, 2, 0);
+        internal const long OfficialInstallerBytes = 3410960;
+        internal const string OfficialInstallerHash = "1f519a22e47187f70a1379a48ca604981c4fcf694f4e65b734aaa74a9fba3032";
         private const string OfficialSignerThumbprint = "F380DCC9F706E2756A5047B832FFE719E1BC35F5";
 
         internal static SensorDriverState Evaluate(bool servicePresent, Version version, string imageHash, bool signatureValid, bool deviceReady)
         {
             if (!servicePresent) return new SensorDriverState(false, false, version, "NotInstalled");
-            bool pinned = String.Equals(imageHash, OfficialDriverHash, StringComparison.OrdinalIgnoreCase);
-            if (!pinned || !signatureValid || version == null || !version.Equals(new Version(2, 1, 0))) return new SensorDriverState(false, true, version, "UnverifiedDriver");
+            bool pinned = (Driver210Version.Equals(version) && String.Equals(imageHash, OfficialDriver210Hash, StringComparison.OrdinalIgnoreCase))
+                || (Driver220Version.Equals(version) && String.Equals(imageHash, OfficialDriver220Hash, StringComparison.OrdinalIgnoreCase));
+            if (!pinned || !signatureValid) return new SensorDriverState(false, true, version, "UnverifiedDriver");
             return new SensorDriverState(deviceReady, true, version, deviceReady ? "Ready" : "DriverNotReady");
         }
 
@@ -52,7 +57,8 @@ namespace WinMemoryCleaner.Sensors
                     using (var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
                     {
                         string hash = Hash(input);
-                        bool signature = String.Equals(hash, OfficialDriverHash, StringComparison.OrdinalIgnoreCase) && VerifySignature(path);
+                        bool knownImage = String.Equals(hash, OfficialDriver210Hash, StringComparison.OrdinalIgnoreCase) || String.Equals(hash, OfficialDriver220Hash, StringComparison.OrdinalIgnoreCase);
+                        bool signature = knownImage && VerifySignature(path);
                         SensorDriverState result = Evaluate(true, version, hash, signature, ready);
                         if (error == 5 && !result.CpuAllowed) return new SensorDriverState(false, true, version, "AccessDenied");
                         return result;
@@ -75,7 +81,7 @@ namespace WinMemoryCleaner.Sensors
                 CheckFilePath(path);
                 using (var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
-                    if (!String.Equals(Hash(input), OfficialInstallerHash, StringComparison.OrdinalIgnoreCase) || !VerifySignature(path)) return false;
+                    if (input.Length != OfficialInstallerBytes || !String.Equals(Hash(input), OfficialInstallerHash, StringComparison.OrdinalIgnoreCase) || !VerifySignature(path)) return false;
                     X509Certificate signed = X509Certificate.CreateFromSignedFile(path);
                     try
                     {

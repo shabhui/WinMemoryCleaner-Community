@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Threading;
+using WinMemoryCleaner.Sensors;
 
 namespace WinMemoryCleaner
 {
@@ -25,6 +26,9 @@ namespace WinMemoryCleaner
         private bool _disposed;
         private bool _actionRunning;
         private readonly Func<ProcessSnapshot,bool,bool,ProcessActionResult> _executeAction;
+        private readonly Func<SensorDriverState> _inspectTemperatureDriver;
+        private readonly Func<bool,string,bool> _beginDriverInstallation;
+        private int _temperaturePromptPending;
         private int _page;
         private double _lastExpandedHeight = ExpandedHeight;
         private double _lastExpandedWidth = ExpandedWidth;
@@ -39,12 +43,17 @@ namespace WinMemoryCleaner
         internal MainWindow(Func<IResourceMonitor> createMonitor)
             : this(createMonitor,delegate(ProcessSnapshot target,bool terminate,bool confirmed) { return new ProcessActionService().Execute(target,terminate,confirmed); }) { }
         internal MainWindow(Func<IResourceMonitor> createMonitor,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction)
+            : this(createMonitor,executeAction,SensorDriverTrust.Inspect,null) { }
+        internal MainWindow(Func<IResourceMonitor> createMonitor,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction,Func<SensorDriverState> inspectDriver,Func<bool,string,bool> beginDriver)
         {
             if(executeAction==null)throw new ArgumentNullException("executeAction");
+            if(inspectDriver==null)throw new ArgumentNullException("inspectDriver");
+            _inspectTemperatureDriver=inspectDriver;
             _executeAction=executeAction;
             var locator = (ViewModelLocator)FindResource("ViewModelLocator");
             _viewModel = locator.MainViewModel;
             Monitoring = new MonitoringViewModel(_viewModel, Dispatcher, createMonitor);
+            _beginDriverInstallation=beginDriver??delegate(bool confirmed,string path) { return Monitoring.BeginDriverInstallation(confirmed,path); };
             InitializeComponent();
             Loaded += OnMainWindowLoaded;
             Closed += OnMainWindowClosed;
@@ -85,7 +94,9 @@ namespace WinMemoryCleaner
         private void UpdateDemand()
         {
             if (_closed || Monitoring == null) return;
-            bool visibleConsumer = IsVisible && WindowState != WindowState.Minimized && !_viewModel.CompactMode && _page != 2;
+            bool memoryVisible = IsVisible && WindowState != WindowState.Minimized;
+            _viewModel.SetMemoryDisplayActive(memoryVisible);
+            bool visibleConsumer = memoryVisible && !_viewModel.CompactMode && _page != 2;
             Monitoring.SetViewState(visibleConsumer, _page == 1);
         }
         private void OnPageChecked(object sender, RoutedEventArgs e)
@@ -104,12 +115,84 @@ namespace WinMemoryCleaner
             if(e.Key!=Key.Escape)return;
             OnClearProcessSearch(sender,e);e.Handled=true;
         }
+        private bool CanShowTemperatureDriverNotice(CheckBox trigger)
+        {
+            return !_closed&&!_disposed&&IsVisible&&WindowState!=WindowState.Minimized&&_page==2
+                &&trigger!=null&&trigger.IsChecked==true&&Monitoring.ShowCpuTemperature&&Monitoring.CanInstallDriver;
+        }
+        private void OnTemperatureFeatureClick(object sender,RoutedEventArgs e)
+        {
+            var trigger=sender as CheckBox;
+            if(!CanShowTemperatureDriverNotice(trigger)||Interlocked.CompareExchange(ref _temperaturePromptPending,1,0)!=0)return;
+            bool queued=ThreadPool.QueueUserWorkItem(delegate
+            {
+                SensorDriverState state;
+                try { state=_inspectTemperatureDriver(); }
+                catch(Exception) { state=null; }
+                try
+                {
+                    Dispatcher.BeginInvoke(DispatcherPriority.Normal,new Action(delegate
+                    {
+                        try
+                        {
+                            if(!CanShowTemperatureDriverNotice(trigger))return;
+                            SensorDriverNotice notice=SensorDriverNotice.FromState(state);
+                            if(notice==null)return;
+                            if(notice.OfferInstallation)
+                            {
+                                bool confirmed=ConfirmTemperatureDriverPrompt(Monitoring.Labels[notice.MessageKey],"DownloadSensorInstallerNote");
+                                if(confirmed&&CanShowTemperatureDriverNotice(trigger))_beginDriverInstallation(true,null);
+                            }
+                            else
+                            {
+                                var dialog=new MessageDialog(this,Monitoring.Labels[notice.MessageKey],Enums.Dialog.Button.Yes)
+                                { Title=Monitoring.Labels["TemperatureDriverTitle"],MaxWidth=Math.Min(600,SystemParameters.WorkArea.Width-32) };
+                                ((MessageViewModel)dialog.DataContext).RightButton=new System.Collections.Generic.KeyValuePair<string,bool?>(Monitoring.Labels["TemperatureDriverAcknowledge"],true);
+                                ShowTemperatureDriverDialog(dialog);
+                            }
+                        }
+                        finally { Interlocked.Exchange(ref _temperaturePromptPending,0); }
+                    }));
+                }
+                catch(InvalidOperationException) { Interlocked.Exchange(ref _temperaturePromptPending,0); }
+            });
+            if(!queued)Interlocked.Exchange(ref _temperaturePromptPending,0);
+        }
         private void OnInstallTemperatureDriver(object sender,RoutedEventArgs e)
         {
             if(_closed||!Monitoring.CanInstallDriver)return;
-            var dialog=new MessageDialog(this,Monitoring.Labels["ConfirmSensorDriver"],Enums.Dialog.Button.No,Enums.Dialog.Button.Yes) { Title=Monitoring.Labels["ConfirmSensorDriverTitle"],MaxWidth=Math.Min(600,SystemParameters.WorkArea.Width-32) };
-            Monitoring.BeginDriverInstallation(dialog.ShowDialog()==true);
+            _beginDriverInstallation(ConfirmTemperatureDriver("DownloadSensorInstallerNote"),null);
         }
+        private void OnSelectTemperatureDriverInstaller(object sender,RoutedEventArgs e)
+        {
+            if(_closed||!Monitoring.CanInstallDriver)return;
+            var picker=new Microsoft.Win32.OpenFileDialog
+            {
+                Title=Monitoring.Labels["SelectSensorInstaller"],Filter=Monitoring.Labels["SensorInstallerFileFilter"],
+                CheckFileExists=true,Multiselect=false,ValidateNames=true,DereferenceLinks=false,RestoreDirectory=true
+            };
+            if(picker.ShowDialog(this)!=true)return;
+            _beginDriverInstallation(ConfirmTemperatureDriver("LocalSensorInstallerNote"),picker.FileName);
+        }
+        private bool ConfirmTemperatureDriver(string sourceNote)
+        { return ConfirmTemperatureDriverPrompt(null,sourceNote); }
+        private bool ConfirmTemperatureDriverPrompt(string notice,string sourceNote)
+        {
+            string prompt=Monitoring.Labels[sourceNote]+Environment.NewLine+Environment.NewLine+Monitoring.Labels["ConfirmSensorDriver"];
+            if(!String.IsNullOrEmpty(notice))prompt=notice+Environment.NewLine+Environment.NewLine+prompt;
+            var dialog=new MessageDialog(this,prompt,Enums.Dialog.Button.No,Enums.Dialog.Button.Yes) { Title=Monitoring.Labels["ConfirmSensorDriverTitle"],MaxWidth=Math.Min(600,SystemParameters.WorkArea.Width-32) };
+            return ShowTemperatureDriverDialog(dialog);
+        }
+        private bool ShowTemperatureDriverDialog(MessageDialog dialog)
+        {
+            // Closing an owner can destroy its HWND without ending WPF's modal frame.
+            // Complete the temperature prompt as cancelled before owner destruction.
+            CancelEventHandler cancelOnOwnerClose=delegate { if(dialog.IsVisible)dialog.DialogResult=false; };
+            Closing+=cancelOnOwnerClose;
+            try { return dialog.ShowDialog()==true; }
+            finally { Closing-=cancelOnOwnerClose; }
+        }
+        private void OnCancelTemperatureDriverPreparation(object sender,RoutedEventArgs e) { Monitoring.CancelDriverPreparation(); }
         private void OnProcessSorting(object sender, DataGridSortingEventArgs e)
         {
             e.Handled = true;
@@ -129,11 +212,11 @@ namespace WinMemoryCleaner
         {
             if(_closed||_disposed||_actionRunning)return;
             var selected=Monitoring.SelectedProcess;
-            if(selected==null) { Monitoring.ActionStatus=Monitoring.Labels["NoSelection"];return; }
+            if(selected==null) { Monitoring.SetActionStatus("NoSelection");return; }
             // Capture identity before confirmation. UI checks supplement the service's retained-handle checks.
             var target=selected.Snapshot;
             if(!Monitoring.CanActOnSelectedProcess||!Monitoring.IsCurrentProcessTarget(target))
-            { Monitoring.ActionStatus=Monitoring.Labels["ProcessTargetUnavailable"];return; }
+            { Monitoring.SetActionStatus("ProcessTargetUnavailable");return; }
             SetActionRunning(true);bool queued=false;
             try
             {
@@ -141,10 +224,10 @@ namespace WinMemoryCleaner
                 {
                     var prompt=string.Format(Localizer.Culture,Monitoring.Labels["Confirm"],target.Name,target.Id);
                     var dialog=new MessageDialog(this,prompt,Enums.Dialog.Button.No,Enums.Dialog.Button.Yes) { Title=Monitoring.Labels["ConfirmTitle"] };
-                    if(dialog.ShowDialog()!=true) { Monitoring.ActionStatus=Monitoring.Labels["NotConfirmed"];return; }
+                    if(dialog.ShowDialog()!=true) { Monitoring.SetActionStatus("NotConfirmed");return; }
                 }
                 if(_closed||_disposed||!Monitoring.IsCurrentProcessTarget(target))
-                { Monitoring.ActionStatus=Monitoring.Labels["ProcessTargetUnavailable"];return; }
+                { Monitoring.SetActionStatus("ProcessTargetUnavailable");return; }
                 queued=ThreadPool.QueueUserWorkItem(delegate
                 {
                     ProcessActionResult result;
@@ -157,10 +240,8 @@ namespace WinMemoryCleaner
                         {
                             if(_closed||_disposed)return;
                             SetActionRunning(false);
-                            string key=result.Outcome.ToString();
-                            Monitoring.ActionStatus=target.Name+" (PID "+target.Id+") — "+Monitoring.Labels[key];
-                            if(result.Outcome==ProcessActionOutcome.Failed||result.Outcome==ProcessActionOutcome.AccessDenied)
-                                Monitoring.ActionStatus+="："+result.Detail;
+                            string detail=result.Outcome==ProcessActionOutcome.Failed||result.Outcome==ProcessActionOutcome.AccessDenied?"："+result.Detail:null;
+                            Monitoring.SetActionStatus(result.Outcome.ToString(),target.Name+" (PID "+target.Id+") — ",detail);
                             Monitoring.RefreshNow();
                         }),DispatcherPriority.Background);
                     }

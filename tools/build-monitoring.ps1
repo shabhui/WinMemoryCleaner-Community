@@ -2,7 +2,8 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Baseline','Backend','Debug','Release','Test')][string]$Mode='Release',
-    [string]$ScratchDirectory=$env:PI_SCRATCH_DIR
+    [string]$ScratchDirectory=$env:PI_SCRATCH_DIR,
+    [string]$SensorPayloadDirectory=''
 )
 $ErrorActionPreference='Stop'
 $repo=Split-Path -Parent $PSScriptRoot
@@ -55,6 +56,7 @@ $out=Join-Path $scratch ($Mode.ToLowerInvariant()+'\')
 $intermediate=Join-Path $scratch ('obj-'+$Mode.ToLowerInvariant()+'\')
 $arguments=@((Join-Path $root 'src\WinMemoryCleaner.csproj'),'/t:Rebuild','/tv:4.0','/m:1','/nr:false','/nologo','/v:minimal',('/p:Configuration='+$config),'/p:Platform=AnyCPU',('/p:FrameworkPathOverride='+$ref),('/p:OutputPath='+$out),('/p:IntermediateOutputPath='+$intermediate),('/p:DocumentationFile='+(Join-Path $out 'WinMemoryCleaner.xml')))
 if($Mode -eq 'Test'){$arguments+='/p:CommunityTestBuild=true'}
+if($SensorPayloadDirectory){$arguments+=('/p:SensorPayloadDirectory='+[IO.Path]::GetFullPath($SensorPayloadDirectory))}
 & $msbuild @arguments *> $log
 $code=$LASTEXITCODE; Get-Content -LiteralPath $log -Tail 65
 if($code -ne 0){exit $code}

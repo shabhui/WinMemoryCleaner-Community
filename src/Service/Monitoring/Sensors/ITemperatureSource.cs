@@ -13,7 +13,7 @@ namespace WinMemoryCleaner
         string DriverStatus { get; }
         int ProcessId { get; }
         string Diagnostic { get; }
-        void GetSnapshot(out MetricValue cpu,out MetricValue gpu);
+        void GetSnapshot(bool cpuRequired,bool gpuRequired,out MetricValue cpu,out MetricValue gpu);
         void Configure(int seconds);
         void Suspend();
         void ResetDriverState();

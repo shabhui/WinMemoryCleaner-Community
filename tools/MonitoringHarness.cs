@@ -34,11 +34,13 @@ public static class MonitoringHarness
     private static int _warmup, _seconds, _trial;
     private static readonly List<double> _cpu = new List<double>();
     private static readonly List<long> _private = new List<long>();
+    private static readonly List<long> _hostPrivate = new List<long>(), _childPrivate = new List<long>();
     private static readonly List<double> _latency = new List<double>();
     private static Stopwatch _clock;
-    private static Process _self;
-    private static double _lastTime, _lastCpu;
+    private static MonitoringProcessAccounting _accounting;
+    private static double _lastTime, _lastCpu, _lastHostCpu, _measureHostCpu, _systemCpuSum;
     private static long _firstPrivate, _lastPrivate;
+    private static int _minimumActive = int.MaxValue, _maximumActive, _maximumAssigned;
     private static StreamWriter _csv;
     private static System.Threading.Timer _timer;
     private static int _sampling;
@@ -67,7 +69,16 @@ public static class MonitoringHarness
         Directory.CreateDirectory(_output);
         AppDomain.CurrentDomain.AssemblyResolve += ResolveAssembly;
         Assembly.LoadFrom(_assemblyPath);
-        try { return RunCore(); }
+        try
+        {
+            using (_accounting = new MonitoringProcessAccounting(_output))
+            {
+                int result; bool clean;
+                try { result = RunCore(); }
+                finally { clean = _accounting.VerifyDescendantsExited(8000); }
+                return clean ? result : 1;
+            }
+        }
         catch (Exception ex) { File.WriteAllText(Path.Combine(_output, "harness-error.txt"), ex.ToString()); Console.Error.WriteLine(ex); return 1; }
     }
 
@@ -127,15 +138,23 @@ public static class MonitoringHarness
                 ConfigureMode();
                 if (_mode == "interaction")
                 {
-                    MonitoringInteraction.Run(_window, _output);
-                    bindingTrace.Flush(); bindingTrace.Close();
-                    _app.Shutdown(0); icon.Dispose();
+                    try { MonitoringInteraction.Run(_window, _output); }
+                    finally
+                    {
+                        // Close product resources while the disposable registry override
+                        // is still active, even when an interaction assertion fails.
+                        bindingTrace.Flush(); bindingTrace.Close();
+                        _app.Shutdown(0); icon.Dispose();
+                        var interactionLocator = _app.Resources["ViewModelLocator"] as IDisposable;
+                        if (interactionLocator != null) interactionLocator.Dispose();
+                    }
                     return 0;
                 }
-                _self = Process.GetCurrentProcess(); _clock = Stopwatch.StartNew();
-                _lastCpu = _self.TotalProcessorTime.TotalSeconds;
+                _clock = Stopwatch.StartNew();
+                var initial = _accounting.TakeSample(0);
+                _lastCpu = initial.CpuSeconds; _lastHostCpu = initial.HostCpuSeconds;
                 _csv = new StreamWriter(Path.Combine(_output, "samples.csv"), false);
-                _csv.WriteLine("elapsedSeconds,cpuMachinePercent,privateBytes,workingSetBytes,measurement");
+                _csv.WriteLine("elapsedSeconds,cpuMachinePercent,privateBytes,workingSetBytes,measurement,sample,totalCpuSeconds,hostCpuSeconds,hostPrivateBytes,childPrivateBytes,hostWorkingSetBytes,childWorkingSetBytes,activeProcesses,assignedProcesses,systemCpuMachinePercent");
                 _dispatchCsv = new StreamWriter(Path.Combine(_output, "dispatcher.csv"), false);
                 _dispatchCsv.WriteLine("elapsedSeconds,latencyMs,processRows");
                 _timer = new System.Threading.Timer(Sample, null, 1000, 1000);
@@ -146,7 +165,7 @@ public static class MonitoringHarness
                     screenshot.Start();
                 }
                 _app.Run();
-                _timer.Dispose(); _csv.Dispose(); _dispatchCsv.Dispose(); _self.Dispose();
+                _timer.Dispose(); _csv.Dispose(); _dispatchCsv.Dispose();
                 bindingTrace.Flush(); bindingTrace.Close();
                 var locator = _app.Resources["ViewModelLocator"] as IDisposable;
                 if (locator != null) locator.Dispose();
@@ -213,17 +232,27 @@ public static class MonitoringHarness
         try
         {
             double elapsed = _clock.Elapsed.TotalSeconds;
-            _self.Refresh(); double totalCpu = _self.TotalProcessorTime.TotalSeconds;
+            var accounting = _accounting.TakeSample(elapsed);
+            double totalCpu = accounting.CpuSeconds;
             double cpu = (totalCpu - _lastCpu) / Math.Max(0.001, elapsed - _lastTime) / Environment.ProcessorCount * 100;
-            long privateBytes = _self.PrivateMemorySize64;
+            long privateBytes = accounting.PrivateBytes;
             bool boundary = _measureStart < 0 && elapsed >= _warmup;
-            if (boundary) { _measureStart = elapsed; _measureCpu = totalCpu; _firstPrivate = privateBytes; }
+            if (boundary) { _measureStart = elapsed; _measureCpu = totalCpu; _measureHostCpu = accounting.HostCpuSeconds; _firstPrivate = privateBytes; }
             bool measured = _measureStart >= 0 && !boundary;
-            _csv.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0:F3},{1:F6},{2},{3},{4}", elapsed, cpu, privateBytes, _self.WorkingSet64, measured ? 1 : 0));
+            _csv.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0:F6},{1:F9},{2},{3},{4},{5},{6:F7},{7:F7},{8},{9},{10},{11},{12},{13},{14:F6}",
+                elapsed, cpu, privateBytes, accounting.WorkingSetBytes, measured ? 1 : 0, accounting.Sample,
+                totalCpu, accounting.HostCpuSeconds, accounting.HostPrivateBytes, privateBytes - accounting.HostPrivateBytes,
+                accounting.HostWorkingSetBytes, accounting.WorkingSetBytes - accounting.HostWorkingSetBytes,
+                accounting.ActiveProcesses, accounting.AssignedProcesses, accounting.SystemCpuMachinePercent));
             _csv.Flush();
             if (measured)
             {
                 _cpu.Add(cpu); _private.Add(privateBytes);
+                _hostPrivate.Add(accounting.HostPrivateBytes); _childPrivate.Add(privateBytes - accounting.HostPrivateBytes);
+                _systemCpuSum += accounting.SystemCpuMachinePercent;
+                _minimumActive = Math.Min(_minimumActive, accounting.ActiveProcesses);
+                _maximumActive = Math.Max(_maximumActive, accounting.ActiveProcesses);
+                _maximumAssigned = Math.Max(_maximumAssigned, accounting.AssignedProcesses);
                 // First private bytes were captured at the end of warm-up, before this interval.
                 _lastPrivate = privateBytes;
                 var queueClock = Stopwatch.StartNew();
@@ -237,7 +266,7 @@ public static class MonitoringHarness
                     _dispatchCsv.Flush();
                 }), DispatcherPriority.Input);
             }
-            _lastTime = elapsed; _lastCpu = totalCpu;
+            _lastTime = elapsed; _lastCpu = totalCpu; _lastHostCpu = accounting.HostCpuSeconds;
             if (_measureStart >= 0 && elapsed - _measureStart >= _seconds)
             {
                 _timer.Change(Timeout.Infinite, Timeout.Infinite);
@@ -253,7 +282,7 @@ public static class MonitoringHarness
 
     private static void Finish()
     {
-        _private.Sort(); _latency.Sort();
+        _private.Sort(); _hostPrivate.Sort(); _childPrivate.Sort(); _latency.Sort();
         var summary = new Dictionary<string, object>();
         summary["assembly"] = _assemblyPath; summary["mode"] = _mode; summary["trial"] = _trial;
         summary["warmupSeconds"] = _warmup; summary["measurementSeconds"] = _seconds;
@@ -261,10 +290,16 @@ public static class MonitoringHarness
         summary["actualWarmupSeconds"] = _measureStart;
         summary["actualMeasurementSeconds"] = _lastTime - _measureStart;
         summary["meanCpuMachinePercent"] = (_lastCpu - _measureCpu) / (_lastTime - _measureStart) / Environment.ProcessorCount * 100;
+        summary["meanHostCpuMachinePercent"] = (_lastHostCpu - _measureHostCpu) / (_lastTime - _measureStart) / Environment.ProcessorCount * 100;
+        summary["meanSystemCpuMachinePercent"] = _cpu.Count == 0 ? -1 : _systemCpuSum / _cpu.Count;
+        summary["accountingScope"] = "Host plus every descendant in a dedicated nested Windows job; job CPU includes exited descendants";
+        summary["minimumActiveProcesses"] = _minimumActive == int.MaxValue ? 0 : _minimumActive;
+        summary["maximumActiveProcesses"] = _maximumActive; summary["maximumAssignedProcesses"] = _maximumAssigned;
         summary["minimumProcessRows"] = _minimumRows == int.MaxValue ? 0 : _minimumRows;
         summary["maximumProcessRows"] = _maximumRows;
         summary["captureScreenshots"] = _captureScreenshots;
-        summary["medianPrivateBytes"] = _private.Count == 0 ? 0 : _private[_private.Count / 2];
+        summary["medianPrivateBytes"] = Median(_private);
+        summary["medianHostPrivateBytes"] = Median(_hostPrivate); summary["medianChildPrivateBytes"] = Median(_childPrivate);
         summary["startPrivateBytes"] = _firstPrivate; summary["endPrivateBytes"] = _lastPrivate;
         summary["privateGrowthBytes"] = _lastPrivate - _firstPrivate;
         summary["dispatcherP95Ms"] = _latency.Count == 0 ? -1 : _latency[Math.Min(_latency.Count - 1, (int)Math.Ceiling(_latency.Count * 0.95) - 1)];
@@ -286,6 +321,13 @@ public static class MonitoringHarness
             _app.Shutdown(1); return;
         }
         _finished = true; _app.Shutdown(0);
+    }
+
+    private static long Median(List<long> sorted)
+    {
+        if (sorted.Count == 0) return 0;
+        int middle = sorted.Count / 2;
+        return sorted.Count % 2 == 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
     }
 
     internal static void RecordLayout()

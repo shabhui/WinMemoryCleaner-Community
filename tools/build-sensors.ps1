@@ -5,13 +5,13 @@ Builds the pinned isolated sensor backend and stages the payload that is embedde
 .DESCRIPTION
 Compiles sensors/*.cs together with shared/Sensors/*.cs using a Roslyn compiler, this repository's complete
 AllRules analyzer ruleset and the pinned .NET Framework 4.7.2 reference assemblies. The staged payload contains
-the backend executable and configuration, the twelve pinned runtime libraries, the unmodified official PawnIO
-installer, the license texts, the third-party notice with corresponding-source information, this lock file and a
-build-info document that records the compiler, ruleset, analyzer, reference and source hashes actually used.
+the backend executable and configuration, the eleven pinned runtime libraries, the license texts,
+the third-party notice with corresponding-source information, this lock file and a build-info document
+that records the compiler, ruleset, analyzer, reference and source hashes actually used.
 
-Nothing here is executed: the installer stays data until the user explicitly confirms it in the application, and
-no hardware is opened. An in-box C# 5 compiler is rejected on purpose because it cannot run the analyzer ruleset;
-a build that cannot use Roslyn fails instead of silently producing a weaker payload.
+The optional official PawnIO installer is acquired only after confirmation at runtime (download or local file).
+It is not required to build this payload. No hardware is opened. An in-box C# 5 compiler is rejected because
+it cannot run the analyzer ruleset; a build that cannot use Roslyn fails instead of producing a weaker payload.
 
 Every staged file is gzip compressed under WinMemoryCleaner.Sensors.Payload.<name>.gz and listed in
 sensors-payload.manifest.json with its length and SHA-256, so the application can verify the embedded bytes
@@ -21,6 +21,7 @@ before use. tools/build-sensors.ps1 is the only supported producer of that direc
 param(
     [string]$CompilerPath = '',
     [string]$OutputDirectory = '',
+    [string]$TestOutputDirectory = '',
     [switch]$Tests
 )
 Set-StrictMode -Version Latest
@@ -28,7 +29,7 @@ $ErrorActionPreference = 'Stop'
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $LockPath = Join-Path $ProjectRoot 'sensors\dependencies.lock.json'
-$PayloadVersion = 'lhm-0.9.6-p1'
+$PayloadVersion = 'lhm-0.9.6-p3'
 if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot 'sensors\WinMemoryCleaner.Sensors.csproj'))) { throw "Run this script from the repository tools directory; '$ProjectRoot' is not the project root." }
 $Lock = Get-Content -Raw -Encoding UTF8 -LiteralPath $LockPath | ConvertFrom-Json
 if ($Lock.schema -ne 1 -or $Lock.payload -ne $PayloadVersion) { throw 'Unsupported sensor dependency lock.' }
@@ -105,9 +106,6 @@ foreach ($license in $Lock.licenses)
     Assert-PinnedFile $licensePath ([long]$license.bytes) $license.sha256 ('License text ' + $license.name)
     $inputFiles.Add([pscustomobject]@{ Source = $licensePath; Name = $license.name })
 }
-$installerPath = Join-Path $ProjectRoot ('build\sensors\inputs\' + $Lock.installer.name)
-Assert-PinnedFile $installerPath ([long]$Lock.installer.bytes) $Lock.installer.sha256 'Official PawnIO installer'
-$inputFiles.Add([pscustomobject]@{ Source = $installerPath; Name = $Lock.installer.name })
 $noticePath = Join-Path $ProjectRoot 'sensors\THIRD-PARTY-NOTICES.md'
 if (-not (Test-Path -LiteralPath $noticePath)) { throw 'Missing sensors\THIRD-PARTY-NOTICES.md.' }
 $inputFiles.Add([pscustomobject]@{ Source = $noticePath; Name = 'THIRD-PARTY-NOTICES.md' })
@@ -168,7 +166,7 @@ if ($Tests)
     Write-Host ('Compiling backend safety tests with the same ' + $analyzerPaths.Count + ' analyzers')
     & $compiler @testArgumentArray
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $testAssembly)) { throw 'The backend safety tests did not compile with the complete analyzer set.' }
-    $testDirectory = Join-Path $ProjectRoot 'build\sensors\tests'
+    $testDirectory = if ([string]::IsNullOrEmpty($TestOutputDirectory)) { Join-Path $ProjectRoot 'build\sensors\tests' } else { [System.IO.Path]::GetFullPath($TestOutputDirectory) }
     [void][System.IO.Directory]::CreateDirectory($testDirectory)
     [System.IO.File]::Copy($testAssembly,(Join-Path $testDirectory 'WinMemoryCleaner.Sensors.Tests.dll'),$true)
     [System.IO.File]::Copy((Join-Path $ProjectRoot 'sensors\App.config'),(Join-Path $testDirectory 'WinMemoryCleaner.Sensors.Tests.dll.config'),$true)
@@ -203,6 +201,8 @@ $buildInfo = [pscustomobject]@{
     references = $referenceInfo
     sources = $sourceInfo
     runtimeLibraries = $runtimeLibraryInfo
+    excludedRuntimeLibraries = @($Lock.excludedAssets | ForEach-Object { $_.name })
+    installerDelivery = 'confirmed-download-or-local-file'
 }
 $buildInfoPath = Join-Path $staging 'sensors-build-info.json'
 [System.IO.File]::WriteAllBytes($buildInfoPath,(New-Object System.Text.UTF8Encoding($false)).GetBytes(($buildInfo | ConvertTo-Json -Depth 6)))
@@ -243,10 +243,14 @@ foreach ($file in $files)
     if ((Get-Sha256 $restored) -ne $file.sha256) { throw ('Payload round trip hash mismatch for ' + $file.path) }
     [System.IO.File]::Delete($restored)
 }
-foreach ($required in @('WinMemoryCleaner.Sensors.exe','WinMemoryCleaner.Sensors.exe.config','LibreHardwareMonitorLib.dll','PawnIO_setup.exe'))
+foreach ($required in @('WinMemoryCleaner.Sensors.exe','WinMemoryCleaner.Sensors.exe.config','LibreHardwareMonitorLib.dll'))
 {
     $match = @($files | Where-Object { $_.path -eq $required })
     if ($match.Count -ne 1) { throw "The payload is missing required file '$required'." }
+}
+foreach ($excluded in @('PawnIO_setup.exe','DiskInfoToolkit.dll'))
+{
+    if (@($files | Where-Object { $_.path -eq $excluded }).Count -ne 0) { throw "Optional/unused file '$excluded' must not be embedded in the runtime payload." }
 }
 
 if (Test-Path -LiteralPath $OutputDirectory)

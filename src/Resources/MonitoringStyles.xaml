@@ -45,7 +45,12 @@
     <Style x:Key="ProcessNumber" TargetType="TextBlock" BasedOn="{StaticResource ProcessCell}"><Setter Property="TextAlignment" Value="Right"/></Style>
     <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{DynamicResource SecondaryBackground}"/><Setter Property="Foreground" Value="{DynamicResource SecondaryDisabled}"/><Setter Property="Padding" Value="8,10"/><Setter Property="BorderBrush" Value="{DynamicResource PrimaryBorder}"/><Setter Property="BorderThickness" Value="0,0,0,1"/></Style>
     <!-- Numeric headers end where their right-aligned values end (both use 8px right padding). -->
-    <Style x:Key="NumericColumnHeader" TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}"><Setter Property="HorizontalContentAlignment" Value="Right"/></Style>
+    <Style x:Key="NumericColumnHeader" TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+        <Setter Property="HorizontalContentAlignment" Value="Right"/>
+        <Setter Property="ContentTemplate"><Setter.Value><DataTemplate>
+            <TextBlock Text="{Binding}" TextWrapping="Wrap" TextAlignment="Right"/>
+        </DataTemplate></Setter.Value></Setter>
+    </Style>
     <!-- Themed track: the system ProgressBar track is near-white and was the brightest element in the dark theme. -->
     <Style x:Key="MonitorProgress" TargetType="ProgressBar">
         <Setter Property="Foreground" Value="{DynamicResource Accent}"/><Setter Property="Background" Value="{DynamicResource SecondaryBorder}"/>

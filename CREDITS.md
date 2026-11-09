@@ -36,11 +36,11 @@
 | 标注项 | 值 |
 |:---|:---|
 | 程序集 / 产品名 | `WinMemoryCleaner.Community` |
-| AssemblyVersion / FileVersion | `3.0.8.1` |
-| AssemblyInformationalVersion | `3.0.8-community.1` |
+| AssemblyVersion / FileVersion | `3.0.8.5` |
+| AssemblyInformationalVersion | `3.0.8.5-community.5` |
 | 版权行（`AssemblyInfo.cs`） | `Original work: Igor Mundstein; modifications: shabhui and community contributors. GPL-3.0.` |
 | 强名称签名 | 已移除（不再使用上游 `.snk` 与上游证书指纹） |
-| 更新 / 发布通道 | 默认关闭（代码注释说明：在社区仓库与受验证的发布通道出现前保持关闭） |
+| 更新 / 发布通道 | 社区仓库独立通道，自动更新默认关闭；启用后校验 SHA-256，测试构建禁用联网更新 |
 
 - 因此社区构建**不是上游签名版本**，与上游官方发布物不可互换，也不应被当作上游官方产物。
 
@@ -122,7 +122,7 @@
 
 ## 8. 捐赠与外部链接
 
-- 应用内"捐赠"窗口与 README 中的捐赠链接（GitHub Sponsors、Ko-fi、BTC、ETH）**指向原作者 Igor Mundstein**，由上游项目保留。
+- 应用内“捐赠”窗口及 README 保留的捐赠链接**指向原作者 Igor Mundstein**；应用内仍保留上游的 GitHub Sponsors、Ko-fi、BTC、ETH 渠道。
 - 本社区分支**不新设、不替换**为社区自身的捐赠渠道或社区仓库链接；工作区文案（`Constants.App.Donation.Attribution`）对此的说明为：
   > These links support the original author, Igor Mundstein, not the Community maintainers.
 

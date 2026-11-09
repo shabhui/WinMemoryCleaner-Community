@@ -15,7 +15,8 @@ namespace WinMemoryCleaner.Test
             internal MetricValue Cpu=Missing("no CPU"),Gpu=Missing("no GPU");
             internal int Samples,Suspends,Disposals;
             internal Exception Error;
-            public void Sample(out MetricValue cpu,out MetricValue gpu) { Samples++;if(Error!=null)throw Error;cpu=Cpu;gpu=Gpu; }
+            internal Action OnSample;
+            public void Sample(out MetricValue cpu,out MetricValue gpu) { Samples++;if(OnSample!=null)OnSample();if(Error!=null)throw Error;cpu=Cpu;gpu=Gpu; }
             public void Suspend() { Suspends++; }
             public void Dispose() { Disposals++; }
         }
@@ -23,49 +24,53 @@ namespace WinMemoryCleaner.Test
         {
             internal MetricValue Cpu=Missing("universal CPU unavailable"),Gpu=Missing("universal GPU unavailable");
             internal int Samples,Refresh,Suspends,Resets,Disposals;
+            internal bool CpuRequired,GpuRequired;
             public string BackendStatus { get { return "Running"; } }
             public string DriverStatus { get { return "KeepExistingDriver"; } }
             public int ProcessId { get { return 123; } }
             public string Diagnostic { get { return "backend diagnostic"; } }
-            public void GetSnapshot(out MetricValue cpu,out MetricValue gpu) { Samples++;cpu=Cpu;gpu=Gpu; }
+            public void GetSnapshot(bool cpuRequired,bool gpuRequired,out MetricValue cpu,out MetricValue gpu)
+            { Samples++;CpuRequired=cpuRequired;GpuRequired=gpuRequired;cpu=Cpu;gpu=Gpu; }
             public void Configure(int seconds) { Refresh=seconds; }
             public void Suspend() { Suspends++; }
             public void ResetDriverState() { Resets++; }
             public void Dispose() { Disposals++; }
         }
         [Test]
-        public void UniversalWinsAndAvoidsUnneededNativeAndWmiWork()
+        public void NativeWinsAndAvoidsUnneededBackendAndWmiWork()
         {
             var backend=new Backend { Cpu=Value(54,"Universal CPU"),Gpu=Value(46,"Universal GPU") };
             var native=new Source { Cpu=Value(90,"ASUS CPU"),Gpu=Value(80,"NVAPI GPU") };var lhm=new Source();var ohm=new Source();
             using(var sampler=new TemperatureSampler(backend,native,lhm,ohm))
             {
                 MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);
-                Assert.AreEqual(54,cpu.Value);Assert.AreEqual("Universal CPU",cpu.Detail);Assert.AreEqual(46,gpu.Value);
-                Assert.AreEqual(1,backend.Samples);Assert.AreEqual(0,native.Samples);Assert.AreEqual(0,lhm.Samples);Assert.AreEqual(0,ohm.Samples);
+                Assert.AreEqual(90,cpu.Value);Assert.AreEqual("ASUS CPU",cpu.Detail);Assert.AreEqual(80,gpu.Value);
+                Assert.AreEqual(0,backend.Samples);Assert.AreEqual(1,native.Samples);Assert.AreEqual(0,lhm.Samples);Assert.AreEqual(0,ohm.Samples);
+                Assert.AreEqual("NotNeeded",sampler.BackendStatus);
             }
         }
         [Test]
-        public void CpuFallsBackIndependentlyWhileUniversalGpuStaysSelected()
+        public void GpuFallsBackIndependentlyWhileNativeCpuStaysSelected()
         {
             var backend=new Backend { Cpu=MetricValue.Missing(MetricStatus.AccessDenied,"official CPU driver not trusted"),Gpu=Value(46,"Universal GPU") };
-            var native=new Source { Cpu=Value(58,"ASUS ATKACPI"),Gpu=Value(99,"NVAPI GPU") };var lhm=new Source();var ohm=new Source();
+            var native=new Source { Cpu=Value(58,"ASUS ATKACPI") };var lhm=new Source();var ohm=new Source();
             using(var sampler=new TemperatureSampler(backend,native,lhm,ohm))
             {
                 MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);
-                Assert.AreEqual(58,cpu.Value);StringAssert.Contains("ASUS ATKACPI",cpu.Detail);StringAssert.Contains("official CPU driver not trusted",cpu.Detail);
-                Assert.AreEqual(46,gpu.Value);Assert.AreEqual("Universal GPU",gpu.Detail);Assert.AreEqual(0,lhm.Samples);Assert.AreEqual(0,ohm.Samples);
+                Assert.AreEqual(58,cpu.Value);Assert.AreEqual("ASUS ATKACPI",cpu.Detail);
+                Assert.AreEqual(46,gpu.Value);StringAssert.Contains("Universal GPU",gpu.Detail);Assert.AreEqual(1,lhm.Samples);Assert.AreEqual(1,ohm.Samples);
+                Assert.IsFalse(backend.CpuRequired);Assert.IsTrue(backend.GpuRequired);
             }
         }
         [Test]
-        public void HealthyNativeStillProbesUniversalOnEveryRequestedSample()
+        public void HealthyNativeDoesNotRequestUniversalOnLaterSamples()
         {
             var backend=new Backend();var native=new Source { Cpu=Value(58,"ASUS"),Gpu=Value(48,"NVAPI") };
             using(var sampler=new TemperatureSampler(backend,native,new Source(),new Source()))
             {
                 MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);Assert.AreEqual(58,cpu.Value);Assert.AreEqual(48,gpu.Value);
                 backend.Cpu=Value(54,"Universal CPU");backend.Gpu=Value(46,"Universal GPU");sampler.Sample(out cpu,out gpu);
-                Assert.AreEqual(2,backend.Samples);Assert.AreEqual(54,cpu.Value);Assert.AreEqual(46,gpu.Value);Assert.AreEqual(1,native.Samples);
+                Assert.AreEqual(0,backend.Samples);Assert.AreEqual(58,cpu.Value);Assert.AreEqual(48,gpu.Value);Assert.AreEqual(2,native.Samples);
             }
         }
         [Test]
@@ -76,7 +81,7 @@ namespace WinMemoryCleaner.Test
             {
                 MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);
                 Assert.AreEqual(54,cpu.Value);Assert.AreEqual(46,gpu.Value);StringAssert.Contains("OpenHardwareMonitor WMI",gpu.Detail);
-                Assert.AreEqual(1,lhm.Samples);Assert.AreEqual(1,ohm.Samples);
+                Assert.AreEqual(1,lhm.Samples);Assert.AreEqual(1,ohm.Samples);Assert.AreEqual(0,backend.Samples);
             }
         }
         [Test]
@@ -97,9 +102,66 @@ namespace WinMemoryCleaner.Test
         [TestCase(double.PositiveInfinity)]
         public void InvalidAvailableSourceCannotBecomeTemperature(double invalid)
         {
-            var backend=new Backend { Cpu=Value(invalid,"invalid universal"),Gpu=Value(46,"Universal GPU") };var native=new Source { Cpu=Value(58,"ASUS") };
+            var backend=new Backend { Cpu=Value(58,"Universal CPU"),Gpu=Value(46,"Universal GPU") };var native=new Source { Cpu=Value(invalid,"invalid native") };
             using(var sampler=new TemperatureSampler(backend,native,new Source(),new Source()))
             { MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);Assert.AreEqual(58,cpu.Value);StringAssert.Contains("INVALID",cpu.Detail.ToUpperInvariant());Assert.AreEqual(46,gpu.Value); }
+        }
+        [Test]
+        public void NativeRecoveryDropsFallbackAndFailureRestoresIt()
+        {
+            var backend=new Backend { Cpu=Value(54,"Universal CPU"),Gpu=Value(46,"Universal GPU") };var native=new Source();
+            using(var sampler=new TemperatureSampler(backend,native,new Source(),new Source()))
+            {
+                MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);Assert.AreEqual(1,backend.Samples);Assert.AreEqual(54,cpu.Value);
+                native.Cpu=Value(58,"ASUS");native.Gpu=Value(48,"NVAPI");sampler.Sample(out cpu,out gpu);
+                Assert.AreEqual(1,backend.Samples);Assert.Greater(backend.Suspends,0);Assert.AreEqual(58,cpu.Value);Assert.AreEqual(48,gpu.Value);
+                native.Error=new InvalidOperationException("source lost");sampler.Sample(out cpu,out gpu);
+                Assert.AreEqual(2,backend.Samples);Assert.AreEqual(54,cpu.Value);Assert.AreEqual(46,gpu.Value);
+            }
+        }
+        [TestCase("cancel")][TestCase("suspend")][TestCase("cancel-resume")][TestCase("dispose")]
+        public void CancelDuringNativeSamplingNeverStartsBackendAfterDemandWasRemoved(string action)
+        {
+            var backend=new Backend();var native=new Source();var sampler=new TemperatureSampler(backend,native,new Source(),new Source());
+            try
+            {
+                native.OnSample=delegate
+                {
+                    if(action=="dispose")sampler.Dispose();
+                    else if(action=="suspend")sampler.Suspend();
+                    else { sampler.SetDemand(false);if(action=="cancel-resume")sampler.SetDemand(true); }
+                };
+                MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);
+                Assert.AreEqual(0,backend.Samples);Assert.AreEqual(MetricStatus.Disabled,cpu.Status);Assert.AreEqual(MetricStatus.Disabled,gpu.Status);
+                if(action!="dispose")
+                {
+                    native.OnSample=null;sampler.SetDemand(true);sampler.Sample(out cpu,out gpu);
+                    Assert.AreEqual(1,backend.Samples,"The next requested sample must still be able to resume.");
+                }
+            }
+            finally { sampler.Dispose(); }
+        }
+        [Test]
+        public void NativeGpuLeavesOnlyCpuDemandAndWmiRecoveryRemovesIt()
+        {
+            var backend=new Backend { Cpu=Value(54,"Universal CPU") };var native=new Source { Gpu=Value(48,"NVAPI") };var lhm=new Source();
+            using(var sampler=new TemperatureSampler(backend,native,lhm,new Source()))
+            {
+                MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);
+                Assert.AreEqual(54,cpu.Value);Assert.AreEqual(48,gpu.Value);Assert.IsTrue(backend.CpuRequired);Assert.IsFalse(backend.GpuRequired);
+                lhm.Cpu=Value(58,"LibreHardwareMonitor WMI");sampler.Sample(out cpu,out gpu);
+                Assert.AreEqual(58,cpu.Value);Assert.AreEqual(1,backend.Samples);Assert.AreEqual("NotNeeded",sampler.BackendStatus);
+            }
+        }
+        [TestCase(0.0)][TestCase(150.01)][TestCase(double.NaN)][TestCase(double.PositiveInfinity)]
+        public void InvalidBackendValueIsStillRejected(double invalid)
+        {
+            var backend=new Backend { Cpu=Value(invalid,"invalid universal"),Gpu=Value(46,"Universal GPU") };
+            using(var sampler=new TemperatureSampler(backend,new Source(),new Source(),new Source()))
+            {
+                MetricValue cpu,gpu;sampler.Sample(out cpu,out gpu);
+                Assert.IsNull(cpu.Value);Assert.AreEqual(MetricStatus.Error,cpu.Status);Assert.AreEqual(46,gpu.Value);
+            }
         }
         [Test]
         public void ConfigurationStatusAndOwnedLifecycleAreForwardedWithoutSampling()

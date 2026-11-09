@@ -14,6 +14,7 @@ namespace WinMemoryCleaner.Test
         private string _root;
         private int _installCalls, _prepareCalls, _completed;
         private const string PinnedHash = "f92de04e5a02256e86ffa1b4252fe669282198b7329227f40e51bca9267d133d";
+        private const string Pinned220Hash = "fca6e7d58b0cf38dbb913a2b9e532f48629145d395f454b16a9f58e97b8d3940";
         [SetUp]
         public void Setup()
         { _root=Path.Combine(Environment.GetEnvironmentVariable("PI_SCRATCH_DIR")??TestContext.CurrentContext.WorkDirectory,"installer-tests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(_root);_installCalls=0;_prepareCalls=0;_completed=0; }
@@ -35,6 +36,7 @@ namespace WinMemoryCleaner.Test
         {
             var installer=Installer(Missing,delegate { return 0; },true);
             Assert.IsFalse(installer.Begin(false));Assert.IsFalse(installer.IsInstalling);Assert.AreEqual(0,_prepareCalls);Assert.AreEqual(0,_installCalls);
+            Assert.IsFalse(installer.Begin(false,Path.Combine(_root,"offline.exe")));Assert.AreEqual(0,_prepareCalls);Assert.AreEqual(0,_installCalls);
         }
         [Test]
         public void AlreadyReadyDriverNeedsNoInstaller()
@@ -104,7 +106,7 @@ namespace WinMemoryCleaner.Test
             {
                 var installer=Installer(Missing,delegate { entered.Set();if(!release.WaitOne(5000))throw new TimeoutException();return 0; },true);
                 Assert.IsTrue(installer.Begin(true));Assert.IsTrue(entered.WaitOne(2000));
-                try { Assert.IsFalse(installer.Begin(true));Assert.AreEqual(1,_installCalls); }
+                try { Assert.IsFalse(installer.Begin(true));Assert.AreEqual(1,_installCalls);Assert.IsFalse(installer.CancelPreparation(),"Once running, only the official installer's UI cancels it."); }
                 finally { release.Set();Finish(installer); }
             }
         }
@@ -123,11 +125,95 @@ namespace WinMemoryCleaner.Test
         public void NewerDeviceVersionCannotAssertPinnedDriverMode()
         { var state=SensorDriverTrust.Evaluate(true,new Version(2,2,0),PinnedHash,true,true);Assert.IsFalse(state.CpuAllowed);Assert.IsTrue(state.ServicePresent);Assert.AreEqual(new Version(2,2,0),state.Version); }
         [Test]
+        public void PinnedSigned220DeviceEnablesCpuWithoutReplacing210Support()
+        {
+            Assert.IsTrue(SensorDriverTrust.Evaluate(true,new Version(2,2,0),Pinned220Hash,true,true).CpuAllowed);
+            Assert.IsTrue(SensorDriverTrust.Evaluate(true,new Version(2,1,0),PinnedHash,true,true).CpuAllowed);
+        }
+        [TestCase(false,true,true)]
+        [TestCase(true,false,true)]
+        [TestCase(true,true,false)]
+        public void Version220StillRequiresServiceSignatureAndReadyDevice(bool present,bool signature,bool ready)
+        { Assert.IsFalse(SensorDriverTrust.Evaluate(present,new Version(2,2,0),Pinned220Hash,signature,ready).CpuAllowed); }
+        [TestCase(2,1,0)]
+        [TestCase(2,2,1)]
+        [TestCase(2,3,0)]
+        [TestCase(3,0,0)]
+        public void Driver220HashCannotAuthorizeOtherDeviceVersions(int major,int minor,int patch)
+        { Assert.IsFalse(SensorDriverTrust.Evaluate(true,new Version(major,minor,patch),Pinned220Hash,true,true).CpuAllowed); }
+        [Test]
+        public void Unknown220ImageOrMissingVersionCannotEnableCpu()
+        {
+            Assert.IsFalse(SensorDriverTrust.Evaluate(true,new Version(2,2,0),new string('0',64),true,true).CpuAllowed);
+            Assert.IsFalse(SensorDriverTrust.Evaluate(true,null,Pinned220Hash,true,true).CpuAllowed);
+        }
+        [Test]
         public void ArbitraryExeCannotBecomeOfficialInstaller()
         { string path=Path.Combine(_root,"not-installer.exe");File.WriteAllText(path,"not executable data");Assert.IsFalse(SensorDriverTrust.VerifyInstaller(path)); }
         [TestCase((string)null)][TestCase("")][TestCase("C:\\bad:path.exe")]
         public void UnsafeInstallerPathIsRejectedWithoutEscapingVerification(string path)
         { Assert.IsFalse(SensorDriverTrust.VerifyInstaller(path)); }
+        [Test]
+        public void LocalPackageSelectionIsPreservedOnTheWorker()
+        {
+            string selected=Path.Combine(_root,"chosen-offline.exe");
+            var installer=new SensorDriverInstaller(Missing,delegate(string path,CancellationToken cancellation)
+            { Assert.AreEqual(selected,path);Assert.IsFalse(cancellation.IsCancellationRequested);Interlocked.Increment(ref _prepareCalls);return new SensorPayloadLease(_root); },
+                delegate { return true; },delegate { Interlocked.Increment(ref _installCalls);return 0; },delegate { });
+            Assert.IsTrue(installer.Begin(true,selected));Finish(installer);Assert.AreEqual(1,_prepareCalls);Assert.AreEqual(1,_installCalls);
+        }
+        [Test]
+        public void CancelledPreparationCannotExecuteAndReleasesTheInstallationGate()
+        {
+            using(var entered=new ManualResetEvent(false))
+            {
+                var installer=new SensorDriverInstaller(Missing,delegate(string path,CancellationToken cancellation)
+                {
+                    entered.Set();if(!cancellation.WaitHandle.WaitOne(5000))throw new TimeoutException();
+                    cancellation.ThrowIfCancellationRequested();return new SensorPayloadLease(_root);
+                },delegate { return true; },delegate { Interlocked.Increment(ref _installCalls);return 0; },delegate { Interlocked.Increment(ref _completed); });
+                try
+                {
+                    Assert.IsTrue(installer.Begin(true));Assert.IsTrue(entered.WaitOne(2000));Assert.IsTrue(installer.CanCancelPreparation);
+                    Assert.IsTrue(installer.CancelPreparation());Finish(installer);
+                    Assert.AreEqual("Cancelled",installer.Status);Assert.IsFalse(installer.CanCancelPreparation);Assert.AreEqual(0,_installCalls);Assert.AreEqual(0,_completed);
+                }
+                finally { installer.CancelPreparation();Finish(installer); }
+            }
+            var next=Installer(Missing,delegate { return 0; },true);Assert.IsTrue(next.Begin(true));Finish(next);Assert.AreEqual(1,_installCalls);
+        }
+        [Test]
+        public void PreparationFailureNeverExecutesOrClaimsDriverChanged()
+        {
+            var installer=new SensorDriverInstaller(Missing,delegate { throw new InvalidDataException("package rejected"); },
+                delegate { return true; },delegate { Interlocked.Increment(ref _installCalls);return 0; },delegate { Interlocked.Increment(ref _completed); });
+            Assert.IsTrue(installer.Begin(true));Finish(installer);StringAssert.StartsWith("InstallFailed",installer.Status);
+            Assert.AreEqual(0,_installCalls);Assert.AreEqual(0,_completed);Assert.IsFalse(installer.CanCancelPreparation);
+        }
+        [TestCase(false)]
+        [TestCase(true)]
+        public void WorkerDisposesItsCancellationSourceAfterCompletion(bool cancel)
+        {
+            using(var entered=new ManualResetEvent(false))
+            using(var release=new ManualResetEvent(false))
+            {
+                CancellationToken observed=default(CancellationToken);
+                var installer=new SensorDriverInstaller(Missing,delegate(string path,CancellationToken cancellation)
+                {
+                    observed=cancellation;entered.Set();if(!release.WaitOne(5000))throw new TimeoutException();
+                    cancellation.ThrowIfCancellationRequested();return new SensorPayloadLease(_root);
+                },delegate { return true; },delegate { Interlocked.Increment(ref _installCalls);return 0; },delegate { });
+                try
+                {
+                    Assert.IsTrue(installer.Begin(true));Assert.IsTrue(entered.WaitOne(2000));Assert.IsNotNull(observed.WaitHandle);
+                    if(cancel)Assert.IsTrue(installer.CancelPreparation());
+                }
+                finally { release.Set();Finish(installer); }
+                Assert.AreEqual(cancel?0:1,_installCalls);
+                Assert.Throws<ObjectDisposedException>(delegate { GC.KeepAlive(observed.WaitHandle); });
+                Assert.IsFalse(installer.CanCancelPreparation);
+            }
+        }
     }
 }
 #pragma warning restore 1591

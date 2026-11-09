@@ -1,491 +1,183 @@
-> [!IMPORTANT]
-> **Unofficial community continuation.** This repository continues [IgorMundstein/WinMemoryCleaner](https://github.com/IgorMundstein/WinMemoryCleaner) (last upstream activity December 2025). It is **not** affiliated with or endorsed by the original author and is **not** an official handover.
->
-> - Original work © **Igor Mundstein**, **GPL-3.0** — full history, license, and attribution are preserved; see [CREDITS.md](CREDITS.md) and [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md).
-> - Community binary: `WinMemoryCleaner.Community.exe` ("WinMemoryCleaner Community"), independent settings key `HKLM\SOFTWARE\WinMemoryCleaner.Community`, **auto-update pulls from this repository's checksum-verified release channel** (the SHA-256 sidecar is verified before anything is installed).
-> - Community builds are **unsigned**; the signed official binary remains the [upstream release](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest).
+# WinMemoryCleaner Community
 
-# Windows Memory Cleaner
+[简体中文](#zh-cn) | [English](#english)
 
-[![](https://img.shields.io/badge/WINDOWS-XP%20%E2%80%93%2011-blue?style=for-the-badge)](#windows-memory-cleaner) [![](https://img.shields.io/badge/SERVER-2003%20%E2%80%93%202025-blue?style=for-the-badge)](#windows-memory-cleaner) [![](https://img.shields.io/github/license/IgorMundstein/WinMemoryCleaner?color=2ea44f&style=for-the-badge)](/LICENSE) [![](https://img.shields.io/github/downloads/IgorMundstein/WinMemoryCleaner/total?color=orange&style=for-the-badge)](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest)
+<a id="zh-cn"></a>
 
-WMC is a free RAM cleaner that effectively optimizes memory areas by utilizing the native Windows API. This can help improve performance when programs do not properly release allocated memory. Featuring a user-friendly interface and intelligent functionality, this portable application requires no installation; however, it does need administrator privileges to run.
+## 简体中文
 
-[![](./docs/assets/images/main-window.png)](#windows-memory-cleaner)
+Windows 内存清理、资源监控与进程占用查看工具，便携运行，需要管理员权限。
 
-## 💾 Download
-> **Community note**: community binaries are published on this repository's [Releases](https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest) page (unsigned, built by CI) and can be built from source (see *Build from source* below). The badge and package-manager links below belong to the **official upstream** distribution by Igor Mundstein.
+> **非官方社区续作**：基于 [Igor Mundstein 的 Windows Memory Cleaner](https://github.com/IgorMundstein/WinMemoryCleaner) 继续维护，与原作者没有隶属关系，也不代表官方接任或获得其背书。原作及贡献者署名、GPL-3.0 许可证和历史记录保留。社区构建名为 `WinMemoryCleaner.Community.exe`，目前**未签名**，不是上游签名版本。
 
-[![](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.github.com%2Frepos%2FIgorMundstein%2FWinMemoryCleaner%2Freleases%2Flatest&query=%24.tag_name&label=Release&style=for-the-badge)](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest/download/WinMemoryCleaner.exe)
+### 下载与校验
 
-### 🍫 [Chocolatey](https://community.chocolatey.org/packages/winmemorycleaner)
+- [社区版正式下载（Releases）](https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest)
+- [社区仓库](https://github.com/shabhui/WinMemoryCleaner-Community) · [问题反馈](https://github.com/shabhui/WinMemoryCleaner-Community/issues)
+- 如需原作者的版本，请使用[上游 Releases](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest)。上游包管理器条目不等同于社区版。
 
-```cmd
-choco install winmemorycleaner
+从**同一个 Release** 下载 `WinMemoryCleaner.Community.exe` 和 `WinMemoryCleaner.Community.exe.sha256`，在下载目录运行 PowerShell：
+
+```powershell
+$expected = [regex]::Match((Get-Content .\WinMemoryCleaner.Community.exe.sha256 -Raw), '(?i)\b[0-9a-f]{64}\b').Value
+$actual = (Get-FileHash .\WinMemoryCleaner.Community.exe -Algorithm SHA256).Hash
+if (!$expected -or $actual -ine $expected) { throw 'SHA-256 校验失败，请勿运行' }
+'校验一致'
 ```
 
-### 🍦 [Scoop](https://scoop.sh/#/apps?q=winmemorycleaner&o=true&dm=true&n=true)
+SHA-256 可检查下载完整性，**不是数字签名，也不能抵御发布账号与校验文件同时被篡改**。遇到安全软件告警时先核对来源、哈希和发布记录，不建议关闭防护或添加全局排除。替换旧版前请从托盘菜单自行退出，并保留可回退的旧文件；程序为单实例，重复启动不代表已切换到新版。
 
-```cmd
-scoop bucket add extras
-```
+自动更新默认关闭。启用后从本仓库的 `releases/latest` 通道读取版本公告、EXE 和 SHA-256；校验失败不会替换正在使用的程序。驱动安装是另一项需要单独确认的操作。
 
-```cmd
-scoop install extras/winmemorycleaner
-```
+### 可以做什么
 
-### 📦 [WinGet](https://winstall.app/apps/IgorMundstein.WinMemoryCleaner)
+| 入口 | 用途 |
+|---|---|
+| **概览** | 查看物理内存、CPU/GPU 使用率与温度来源，按需执行原有内存清理 |
+| **进程** | 按名称或 PID 搜索，按工作集、私有内存、CPU、GPU、专用显存排序；同名进程保留独立行 |
+| **设置** | 调整 1 / 2 / 5 秒刷新（默认 2 秒）、悬浮显示、温度选项，以及原有清理、托盘、快捷键、主题和语言设置 |
+| **托盘** | 查看内存占用、重新打开窗口、清理或退出 |
+| **悬浮监控** | 默认关闭；可横向/竖向、拖动定位、保存位置，默认鼠标穿透且不抢焦点；“仅显示监控条”会隐藏主窗口，托盘仍可打开设置 |
 
-```cmd
-winget install IgorMundstein.WinMemoryCleaner
-```
+**操作风险：** Windows 会自行管理缓存，释放更多内存不等于性能一定提高。工作集回收可能导致重新读盘或短暂卡顿；进程排除仅影响逐进程工作集回收，不影响其他全局清理。结束进程会丢失未保存数据，必须先确认。程序会校验所选进程身份并拒绝自身、关键及受保护进程，但这些防护不能消除对普通应用误操作的风险。
 
-### 🛠️ Build from source (community)
+### 采样与温度的边界
 
-The **main WPF executable remains .NET Framework 4.0 / C# 4**. Its embedded sensor backend is **Windows x64 / .NET Framework 4.7.2 / C# 4**, with fixed LibreHardwareMonitorLib **0.9.6**. Restore the main project's NuGet packages before building:
+- 使用率来自 Windows 采样接口；进程 CPU 按全机归一化，GPU 使用率取物理显卡忙引擎。首帧、权限不足、进程退出或驱动不支持时可能没有读数，不能直接与其他工具的不同统计口径比较。
+- 没有可信温度时显示“不可用”或 `—`，不是 0°C；不把 ACPI 区域、热点或显存温度冒充 CPU/GPU 核心温度。
+- 温度按界面需求采样：可见概览/进程页会请求温度；仅悬浮显示时由温度显示项决定。关闭悬浮并隐藏/最小化主窗口后，停止无消费者的 CPU/GPU、温度与进程详情采样，保留托盘及自动清理所需的低频内存检查。
+- 优先复用已有 ASUS CPU / NVIDIA NVAPI 来源和已运行的默认名 LHM/OHM WMI 提供者；缺少指标时才使用内嵌 LibreHardwareMonitor **0.9.6** 独立后端。轻量来源覆盖全部温度时无需保持后端运行。
+- 独立后端按需校验并释放至 `%LOCALAPPDATA%\WinMemoryCleaner.Community\Sensors`，最多一个自有后端进程；会增加磁盘缓存和进程内存开销，不需要在 EXE 旁手工放 DLL。
+- 不保证所有 CPU/GPU、虚拟机、驱动或安全策略均能提供温度；悬浮层也不保证覆盖独占全屏、受保护桌面或反作弊环境。没有游戏注入或绕过保护功能。
+
+#### 可选温度驱动：先确认，再准备
+
+日常启动、监控、构建、测试及程序更新**不会自动下载安装器或安装驱动**。显式开启 CPU 温度或包含 CPU 温度的悬浮显示时，会异步检查状态；只有确认驱动确实缺失才询问安装。权限不足、设备未就绪、身份不明等状态会分别说明，不伪装成“未安装”。
+
+用户明确确认后，才准备固定的[官方 PawnIO **2.2.0** 安装包](https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0)：可从受限 HTTPS 来源获取，也可选择本地官方离线包。两种方式都必须通过固定长度、SHA-256、Windows 签名信任、签名者及路径检查；离线包无效不会偷偷改走下载，取消选择或准备不启动安装器。
+
+已有驱动须精确匹配受支持的官方 **2.1.0 / 2.2.0** 版本与哈希，并通过签名及设备就绪检查；仅有签名或版本更高并不足够。**不会静默覆盖、降级或卸载已有共享驱动**，不静默安装、不自动重启、不关闭 Secure Boot/HVCI 等系统保护。自有采集代码不控制风扇、功耗、电压或超频；上游测量接口可能使用具备读写权限的句柄/IOCTL，不应理解为所有底层访问都只有只读权限。
+
+### 运行与构建
+
+- **主程序**：WPF、.NET Framework **4.0**、C# **4**；新增监控指标的可用性取决于 Windows 和驱动，并非所有旧系统均具备全部指标。
+- **可选独立温度后端**：Windows **10/11 x64**、.NET Framework **4.7.2 或更新的 4.x**。缺少运行时或架构支持时如实降级，不自动安装 .NET。
+- 社区设置独立保存在 `HKLM\SOFTWARE\WinMemoryCleaner.Community`，不迁移或覆盖上游设置。
+
+在具备 Visual Studio / Build Tools MSBuild 与 NuGet 的开发环境中，从仓库根目录执行；以下 `$msbuild` 应来自 Visual Studio 开发者 PowerShell，而不是系统内置 Framework MSBuild：
 
 ```powershell
 nuget restore .\src\packages.config -PackagesDirectory .\src\packages -NonInteractive
-
-# Development only: the main project's in-box MSBuild does not run its analyzers.
-# The backend still REQUIRES Roslyn and the complete analyzer set; no C# 5 fallback.
-powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -SensorCompilerPath 'C:\path\to\Roslyn\csc.exe'
-
-# Canonical local equivalent: Visual Studio MSBuild builds backend, payload and main EXE together.
-powershell -ExecutionPolicy Bypass -File .\build-community.ps1 -Tests -Package -MSBuildPath 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'
+$msbuild = (Get-Command msbuild).Source
+.\build-community.ps1 -Tests -MSBuildPath $msbuild
+# 需要生成本地候选包时：
+.\build-community.ps1 -Tests -Package -MSBuildPath $msbuild
 ```
 
-**Released binaries come only from [Community release build](.github/workflows/community-release.yml).** Packaging without Visual Studio MSBuild, `-Tests`, a missing Roslyn compiler/analyzer, a changed language pin, or a missing payload fails explicitly. Both own-code projects use `AllRules.ruleset` and warnings-as-errors; the pinned third-party binaries are not claimed to satisfy our C# 4 source rules. The build restores hash-locked sensor inputs, compiles both safety suites, embeds 24 verified files, and compares the EXE's resources with the same build's inputs without executing them. The isolated NUnit runner uses CLR 4, labels and the unchanged 60-second per-test timeout; only the existing Manual/Desktop categories are excluded. It also builds and tests a separate hash-locked corresponding-source ZIP (driver/API/tool, PawnPP submodule, module sources/compiler inputs); the portable ZIP includes six complete license texts and provenance notices. The official installer wrapper source/signing credentials are not publicly available and are not offered by that bundle.
+[`build-community.ps1`](build-community.ps1) 会恢复锁定的传感器输入、构建同源后端与主程序、验证实际内嵌载荷，并在 `-Tests` 下运行两套安全测试及对应源码检查。`-Package` 要求 Visual Studio MSBuild 和 `-Tests`；保持 C# 4、完整分析器与警告即错误。默认系统 Framework 构建仅用于开发，后端仍需用 `-SensorCompilerPath` 指向可用的 Roslyn 编译器，不能冒充正式构建。
 
-Reports stay in `build\test-results`, generated inputs in `build\sensors`, and publishable packages in `dist`. Locked outputs fail rather than stopping a user process. No build, test or update installs a runtime or driver.
+**正式产物只从 [Community release build](.github/workflows/community-release.yml) 发布**；[Community CI](.github/workflows/community-ci.yml) 用于不发布的构建与安全测试。输出分别位于 `build/test-results`、`build/sensors` 和 `dist`。本地候选、历史报告或文档整理不代表当前候选已通过 CI、完整 GUI 或性能验收；以对应提交的实际运行结果为准。
 
-## 🚀 Features
+### 文档、反馈与许可
 
-| Feature | Description |
-|:---|:---|
-| **Always&nbsp;on&nbsp;Top** | Pins the main application window so it is always visible above other windows. |
-| **Auto&nbsp;Optimization** | Set the app to clean memory automatically, either by period (`Every X hours`) or when free physical RAM drops below a specified threshold (`When free physical memory is below X percent`). |
-| **Auto&nbsp;Update** | Automatically checks for new versions every 24 hours to keep the application up to date. |
-| **Close&nbsp;after&nbsp;Optimization** | The application will automatically close after a memory optimization is completed. |
-| **Close&nbsp;to&nbsp;Notification&nbsp;Area** | Minimizes the app to the system tray instead of closing when the 'X' button is clicked. |
-| **Compact&nbsp;Mode** | Collapse the main window into a minimal view for at-a-glance monitoring. |
-| **Font&nbsp;Size&nbsp;Adjustment** | Customize the font size for different screen sizes and resolutions. |
-| **Global&nbsp;Hotkey** | Trigger an optimization instantly from anywhere with a customizable hotkey (default `CTRL+SHIFT+M`). |
-| **Hotkey&nbsp;Toggle** | Enable or disable the global optimization hotkey independently. |
-| **Multi-Language&nbsp;Support** | Albanian, Arabic, Bulgarian, Chinese (Simplified), Chinese (Traditional), Dutch, English, French, German, Greek, Hebrew, Hungarian, Indonesian, Irish, Italian, Japanese, Korean, Macedonian, Norwegian, Persian, Polish, Portuguese (Brazil), Portuguese (Portugal), Russian, Serbian (Cyrillic), Serbian (Latin), Slovenian, Spanish, Thai, Turkish, and Ukrainian. |
-| **Working&nbsp;Set&nbsp;Exclusions** | Exclusions skip only per-process working-set trimming; other selected global memory cleanups and automatic optimization remain unaffected. |
-| **Run&nbsp;on&nbsp;Low&nbsp;Priority** | Limits the app's resource usage by reducing its process priority. This may increase optimization time but can prevent system freezes. |
-| **Run&nbsp;on&nbsp;Startup** | Automatically starts the application when Windows boots by creating a task in the Windows Task Scheduler. |
-| **Show&nbsp;Optimization&nbsp;Notifications** | Display system tray notifications after each optimization, showing the reason and amount of memory freed. |
-| **Show&nbsp;Virtual&nbsp;Memory** | Displays virtual memory (page file) usage in the main window and system tray text. |
-| **Start&nbsp;Menu&nbsp;Shortcut** | Automatically creates a Start Menu shortcut for quick access to the application. |
-| **Start&nbsp;Minimized** | The application will start minimized directly to the system tray. A single-click on the tray icon restores it. |
-| **Tray&nbsp;Icon&nbsp;Customization** | Customize tray icon colors (background, text, warning, danger, optimizing), display memory usage, set threshold levels, and enable middle-click optimization. |
-| **Resource Monitoring** | Live CPU / GPU usage and a physical-memory gauge with the data source named for every readout; refresh interval selectable from 1 / 2 / 5 seconds. |
-| **Process Insights & Safe Actions** | Searchable, sortable process list (memory, normalized CPU, GPU usage, dedicated VRAM) with identity-verified working-set trim and guarded termination of the selected process. |
-| **Monitoring Overlay** | Compact always-on-top strip — horizontal by default, switchable to vertical — that is click-through, never steals focus, saves its position, and offers a "monitor only" mode that hides the whole main window. |
-| **Real CPU / GPU Temperatures** | Automatic, identified readings from the embedded LibreHardwareMonitor 0.9.6 backend, with independent ASUS / NVIDIA NVAPI / LHM-OHM WMI fallbacks; absent or stale readings show a reason, never a fake 0 °C. |
+下列相对链接用于源码仓库。便携 ZIP 把指南平铺为 `monitoring-guide.zh-CN.md`，传感器说明为 `SENSOR-THIRD-PARTY-NOTICES.md` / `SENSOR-SOURCES.md`；源码和其他历史报告请在社区仓库查看。
 
-### ↕️ Compact Mode
+- [监控与进程管理指南](docs/monitoring-guide.zh-CN.md)
+- [Community.5 发布验证记录与限制](docs/release-community-5-validation.zh-CN.md)
+- 候选历史记录：[p3 驱动提示](docs/cpu-driver-prompt-report.zh-CN.md)、[p2 验收（含未通过项）](docs/acceptance-p2-01-report.zh-CN.md)、[体积优化](docs/size-optimization-report.zh-CN.md)、[刷新优化](docs/refresh-optimization-report.zh-CN.md)。报告中的 `build/...` 仅是本地证据位置，不是公开下载或已发布资产。
+- 提交问题前请删除用户名、计算机名、绝对路径、进程身份、个人配置及截图/日志中的私人内容；不要直接上传完整本地证据目录。
+- 原作 © **Igor Mundstein** 及贡献者；社区修改由 **shabhui 和社区贡献者**维护，依 [GPL-3.0](LICENSE) 分发。完整署名及翻译贡献者见 [CREDITS.md](CREDITS.md)，上游来源见 [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md)。
+- 温度依赖的[第三方许可与来源](sensors/THIRD-PARTY-NOTICES.md)、[对应源码说明](sensors/SOURCE-README.md)单独保留；对应源码包不等于可逐字节重建官方签名安装器。外部 2.2.0 驱动源码链接不应误认为已包含于保留的 2.1.0 源码档案。
+- 如希望支持原作者，可访问 [Igor Mundstein 的 GitHub Sponsors](https://github.com/sponsors/IgorMundstein) 或 [Ko-fi](https://ko-fi.com/igormundstein)；这些不是社区维护者的收款渠道。
 
-The Compact Mode feature allows you to collapse the main window into a minimal view for at-a-glance monitoring. By clicking the arrow next to the minimize button, the UI shrinks to show only the most essential memory statistics and controls. This mode is ideal for users who want to keep an eye on their system’s memory usage without occupying much screen space. Toggle Compact Mode on or off at any time to suit your workflow.
+---
 
-[![](./docs/assets/images/main-window-compact.png)](#%EF%B8%8F-compact-mode)
+<a id="english"></a>
 
-### 📊 Community Monitoring
+## English
 
-On top of the original cleaner, the community edition adds an on-demand monitoring layer. **Our acquisition code only enables CPU/GPU and never calls fan, power, voltage, overclock or performance-mode controls.** It does not automatically install anything; an optional official PawnIO driver install is a separate, explicitly confirmed user action. Underlying vendor measurement APIs can use read/write-capable native handles and IOCTLs, so this is not a claim that every upstream access has read-only permission bits.
+A portable Windows memory-cleaning, resource-monitoring and per-process usage tool. Administrator privileges are required.
 
-- **Resource overview**: a physical-memory gauge plus paired CPU / GPU usage readouts, each labelled with its data source (Windows GetSystemTimes, Windows PDH).
-- **Process page**: enumerate every visible process (duplicate names keep separate PID rows), search by name or PID, sort by any metric; unavailable values sort last and never pretend to be zero.
-- **Safe process actions**: release the working set of a selected process, or end it after an explicit confirmation dialog. Identity checks and the operation itself use the same native process handle, so PID reuse cannot redirect an action; critical, protected and own processes are refused.
-- **Compact monitoring strip**: replaces the old fixed-width floating panel with three tight CPU / GPU / RAM groups — about 316×26 DIP horizontal, 118×78 DIP vertical with all items enabled. It stays topmost, is mouse-through by default, never takes focus, supports drag positioning and per-monitor corner placement, and both the layout (horizontal / vertical) and position persist.
-- **Monitor-only mode**: one click enables the strip and hides the main window; the tray icon reopens settings. Nothing else about your close-button preference changes, and sampling continues while the window is hidden.
-- **Honest, automatic temperatures**: the embedded x64/net472 backend probes supported Intel/AMD CPUs and NVIDIA/AMD/Intel GPUs; a separate LibreHardwareMonitor application is not needed for this path. CPU requires the pinned official standard PawnIO 2.1.0 image, valid Windows trust and a ready device, checked in both processes. Unknown/shared, newer, unsigned or unrestricted drivers are not overwritten or treated as absent. Fixed LHM 0.9.6 couples Intel GPU enumeration to that same CPU/driver gate; NVIDIA/AMD GPU probing stays independent. This is broad detection, **not an all-hardware guarantee**.
-- **Independent fallbacks**: each missing CPU/GPU reading can use the existing ASUS CPU sensor (`0x00120094`) / NVIDIA NVAPI, then an already-running default-named LibreHardwareMonitor or OpenHardwareMonitor WMI provider. Details retain the actual device/sensor/provider and the universal failure reason. CPU candidates follow explicit package/Tdie/combined/average/CCD/core rules; GPU uses core temperature only. Hotspot, VRAM, ACPI zones, distance-to-threshold and invalid/non-finite/out-of-range values never become a fake core temperature.
-- **Explicit driver consent**: the settings status line explains component/driver readiness. Clicking **Install universal temperature driver** opens a confirmation before the unmodified, signature-checked official installer can start. Cancellation performs no install. Security-policy blocks, failure or reboot requirements are reported without changing Secure Boot/HVCI or rebooting Windows; an existing shared driver is never replaced or uninstalled by the cleaner.
-- **On-demand sampling and cost**: with temperatures demanded there is at most one owned backend, prepared from the EXE into `%LOCALAPPDATA%\WinMemoryCleaner.Community\Sensors`. A clean EXE-only update can prepare its own versioned payload; no companion DLLs are required next to the download. This adds compressed EXE size, disk cache and a separate process/private-memory cost. Switching off demand invalidates cached readings immediately and stops the owned child asynchronously; with the overlay off and shell hidden, CPU/GPU, temperature and per-process sampling stop. Only the tray memory display and the auto-optimization check keep their low cadence. Missing .NET 4.7.2/x64 support fails honestly with fallbacks, without installing a runtime.
+> **Unofficial community continuation:** maintained from [Igor Mundstein's Windows Memory Cleaner](https://github.com/IgorMundstein/WinMemoryCleaner), with no affiliation, official succession or endorsement implied. Original and contributor credits, the GPL-3.0 license and project history are preserved. The community executable is named `WinMemoryCleaner.Community.exe`; it is currently **unsigned**, not an upstream-signed build.
 
-**3.0.8.4-community.4 is published** (unsigned, stable) from the canonical [Community release build](https://github.com/shabhui/WinMemoryCleaner-Community/actions/runs/39567637435) at commit `9e4876dc56cb43959e29226bff8ae9227870ca6e`; download it from [Releases](https://github.com/shabhui/WinMemoryCleaner-Community/releases/tag/v3.0.8.4-community.4) or through the existing `releases/latest` update channel. That run recorded main **554/554** and backend **36/36** with zero errors, failures or not-run cases, two corresponding-source checks, and identical production/test/packaged payload reports (24 files, 25 resources, 14 source fingerprints, 9 analyzers). New-version evidence is tracked in the [universal temperature verification report](docs/universal-temperature-report.zh-CN.md). One independent review found no Critical/Important defect; the verified minor lifecycle, cleanup, path and release-guard issues are fixed. The latest isolated production-window run before those review fixes records **75 passed / 0 failed / 1 unavailable**: real RTX 4080 core temperatures and ASUS CPU fallback are distinguished from the unavailable trusted-driver universal CPU path. An independent audit of 780 local measurement samples found combined CPU medians around **0.096%**, dispatcher p95 below **0.85 ms**, and ten-minute private-memory growth **5.266 MiB**; the report pins that development binary and does not attribute those numbers to the released build. The [Chinese guide](docs/monitoring-guide.zh-CN.md) explains driver and compatibility limits. The [2026-10-17 compact report](docs/compact-monitoring-report.zh-CN.md) and [historical ledger](docs/monitoring-progress.md) describe **v3.0.8.3-era evidence only**, not this backend's performance or universal CPU verification.
+### Download and verify
 
-### 🔔 System Tray (Notification Area)
+- [Community releases](https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest)
+- [Community repository](https://github.com/shabhui/WinMemoryCleaner-Community) · [Report an issue](https://github.com/shabhui/WinMemoryCleaner-Community/issues)
+- For the original author's version, use the [upstream releases](https://github.com/IgorMundstein/WinMemoryCleaner/releases/latest). Upstream package-manager entries do not identify the community build.
 
-The application provides quick access and information directly from the system tray.
+Download `WinMemoryCleaner.Community.exe` and `WinMemoryCleaner.Community.exe.sha256` from **the same release**, then run PowerShell in the download directory:
 
-- **Menu**: A right-click menu offers quick access to trigger an optimization or exit the application.
-
-  - Optimize
-  - Exit
- 
-- **Notification**: After an optimization, a notification appears showing the reason and the approximate amount of memory that was freed.
-
-  [![](./docs/assets/images/notification.png)](#-system-tray-notification-area)
-
-- **Tray Icon Customization**: The tray icon can be configured to:
-
-  - Customize background, danger, optimizing, text, and warning colors
-  - Display real-time physical memory usage instead of the app logo
-  - Enable middle mouse click to trigger optimization
-  - Set danger and warning level thresholds that automatically change icon colors
-  - Use transparent background when showing memory usage
-  - Visual rotation effect during optimization
-
-## 🧬 Technical Deep Dive: How It Works
-
-WinMemoryCleaner provides a user-friendly interface for powerful, documented Windows API functions. There are no tricks or secrets—just direct access to the tools needed to manage your system's memory effectively. Each cleaning function targets a specific memory area, and its availability depends on your Windows version.
-
-Here’s a breakdown of what each function does and the minimum supported Windows version required to use it:
-
-| Memory Area | Description | Windows | Server |
-| :--- | :--- | :---: | :---: |
-| **Combined&nbsp;Page&nbsp;List** | Flushes memory blocks from the page-combining list, a memory-saving feature in modern Windows that merges identical pages of memory. | 8+ | 2012+ |
-| **Modified&nbsp;File&nbsp;Cache** | Flushes the volume file cache to disk for all fixed drives, ensuring all pending writes are committed. | XP+ | 2003+ |
-| **Modified&nbsp;Page&nbsp;List** | Writes unsaved pages from RAM to disk and moves the now-saved pages to the standby list. | Vista+ | 2008+ |
-| **Registry&nbsp;Cache** | Flushes registry hives from memory. Hives are logical groups of keys and values that are loaded into memory when the OS starts or a user logs in. | 8.1+ | 2012+ |
-| **Standby&nbsp;List** | Clears the entire Standby List, which contains cached data from closed applications. This aggressive method frees the maximum amount of cached RAM for demanding tasks. | Vista+ | 2008+ |
-| **Standby&nbsp;List&nbsp;(low&nbsp;priority)** | Clears only the lowest-priority pages from the Standby List. This gentle method frees some cached RAM without removing data that Windows considers more important. | Vista+ | 2008+ |
-| **System&nbsp;File&nbsp;Cache** | Flushes the cache Windows uses for its system files, trimming it to release memory. Useful for refreshing the system’s state before launching a memory-intensive application. | XP+ | 2003+ |
-| **Working&nbsp;Set** | Removes memory from all user-mode and system working sets, forcing processes (like games or browsers that hoard memory) to release non-essential RAM. This can reduce stutter and improve responsiveness. | XP+ | 2003+ |
-
-## 🔴 The Problem: Inefficient Memory Management
-
-Modern operating systems are good at managing memory, but they aren't perfect. Over time, RAM can become cluttered with cached data from closed applications (**Standby List**) or held unnecessarily by running processes (**Working Set**). This leads to system slowdowns, stuttering in applications, and reduced responsiveness, especially on systems with limited RAM.
-
-The market for PC utilities is plagued by "RAM boosters" that use deceptive tricks and offer no real, verifiable benefits, creating deep-seated skepticism among users.
-
-## ✅ The Solution: A Transparent, Evidence-Based Tool
-
-WinMemoryCleaner is the antidote to "snake oil" utilities. It does not use undocumented hacks or harmful tricks. Instead, it provides a clean, user-friendly interface to powerful, **native Windows API functions** that give you direct control over your system's memory. It is a tool built on transparency, proof, and respect for the user.
-
-## 🔎 Proof of Concept: See It Work Yourself
-
-Don't take our word for it. You can verify the effects of this tool using Windows' own **Resource Monitor**.
-
-1. Open Resource Monitor (search `resmon.exe` in the Start Menu).
-2. Go to the **Memory** tab. Observe the blue "Standby" portion of the bar. This is RAM used for caching files from closed programs.
-3. Now, open and close a few large applications (a game, a browser, Photoshop). Watch the blue "Standby" section grow.
-4. In WinMemoryCleaner, select **only the `Standby List`** and click `Optimize`.
-5. Watch the Resource Monitor again. The blue "Standby" memory will instantly drop, and the light green "Free" memory will increase by the same amount.
-
-This is a direct, verifiable demonstration that the application converts cached memory into truly free memory, ready for your next task.
-
-## 🔒 Trust & Integrity
-> **Community note**: the CI/CD signing pipeline and SignPath certificate described in this section belong to the **upstream** project. Community continuation builds are **unsigned** — verify the SHA-256 hash or build from source yourself.
-
-We understand that users are rightfully skeptical of system utilities. This project is built on a foundation of verifiable trust and transparency.
-
-### 🔑 Automated & Secure Builds (CI/CD)
-
-Every community release is built and published by **GitHub Actions**, with no manual binary upload: [Community CI](.github/workflows/community-ci.yml) builds production and isolated-test main executables plus the same-build backend, runs both safety suites, and verifies the embedded payload on code pushes. [Community release build](.github/workflows/community-release.yml) does the same with Visual Studio/Roslyn MSBuild, then packages the EXE, `.sha256`, `AssemblyInfo.txt`, archive, third-party notices and corresponding-source bundle. Checksum, version and payload checks run before publication; an existing tag/asset is never replaced. The upstream signing, release, and package-manager workflows remain preserved but disabled in [`.github/workflows-disabled/`](.github/workflows-disabled).
-
-### 🔁 Download Verification (Self-Update)
-
-Self-update never installs a download it cannot verify. When *Auto Update* is enabled, the updater:
-
-1. reads the announced version from the channel's `AssemblyInfo.txt` and stops unless it is newer than the running version;
-2. downloads the new executable;
-3. downloads the published SHA-256 checksum of that executable and compares it with the hash of the downloaded file;
-4. only on an exact match does it replace the executable (terminate, move, restart). A missing or non-HTTPS checksum source, a download error, a mismatch, or an unexpected version aborts the update, deletes the downloaded file, and writes the reason to the log.
-
-Because steps 3 and 4 are mandatory, a channel that publishes no checksum is treated as unsupported (`Helper.IsAutoUpdateSupported` requires an HTTPS checksum source).
-
-**Community update channel:** it is enabled and served by this repository's releases. The updater reads `https://github.com/shabhui/WinMemoryCleaner-Community/releases/latest/download/` plus `AssemblyInfo.txt`, `WinMemoryCleaner.Community.exe` and `WinMemoryCleaner.Community.exe.sha256` — every community release publishes those exact asset names. *Auto Update* still defaults to off, so nothing is downloaded until you enable it in the settings; any download that cannot be verified is deleted and the running executable is left alone. A checksum published next to the binary protects against a corrupted, truncated, or substituted download — it is not a code signature.
-
-### 🔑 Verifiable Code Signing
-
-Since version 3.0.0, we have been digitally signing our files through [SignPath.io](https://about.signpath.io/product/open-source) using a free certificate provided under the [SignPath Terms of Use](https://signpath.org/terms). The project received the certificate in recognition of its popularity and public value in the open-source community. This process ensures that we distribute authentic files that have not been tampered with.
-
-A digital signature proves two things:
-* **Authenticity:** The publisher of the file is who they say they are.
-* **Integrity:** The file has not been altered or tampered with since it was signed.
-
-You can verify the signature by right-clicking the `.exe` -> `Properties` -> `Digital Signatures`
-
-[![](./docs/assets/images/digital-signature.png)](#-trust--integrity)
-
-### 🔑 Microsoft Defender SmartScreen
-
-Even with a valid digital signature, Microsoft Defender SmartScreen may initially flag a new release with a "Windows protected your PC" warning.
-
-[![](./docs/assets/images/microsoft-defender-smart-screen.png)](#-microsoft-defender-smartscreen)
-
-This happens because the application is new and has not yet built a strong reputation with Microsoft. This is a standard, reputation-based security measure. By running the app, you help it build a positive reputation, which will cause this warning to disappear more quickly for other users. We appreciate your trust and understanding.
-
-### 🔑 Independent Security Scans
-
-Each new version is automatically submitted for analysis to leading security platforms, including VirusTotal and Hybrid Analysis, to ensure it is free from threats.
-
-## 💻 Automation & Deployment
-
-You must run these headless operations with administrator privileges.
-
-### 🔳 Console Mode
-
-Run optimizations silently for scripting and automation. Use any combination of the following arguments:
-
-- `/CombinedPageList`
-- `/ModifiedFileCache`
-- `/ModifiedPageList`
-- `/RegistryCache`
-- `/StandbyList` or `/StandbyListLowPriority`
-- `/SystemFileCache`
-- `/WorkingSet`
-
-**> Command-line example:**
-
-```cmd
-{path}\WinMemoryCleaner.exe /ModifiedFileCache /StandbyList /WorkingSet
+```powershell
+$expected = [regex]::Match((Get-Content .\WinMemoryCleaner.Community.exe.sha256 -Raw), '(?i)\b[0-9a-f]{64}\b').Value
+$actual = (Get-FileHash .\WinMemoryCleaner.Community.exe -Algorithm SHA256).Hash
+if (!$expected -or $actual -ine $expected) { throw 'SHA-256 mismatch. Do not run this file.' }
+'Checksum matches'
 ```
 
-### ⚙️ Windows Service Mode
+SHA-256 checks download integrity; it is **not a digital signature and cannot protect against the release account and checksum file both being compromised**. If security software reports a warning, check the source, hash and release history first. Disabling protection or adding broad exclusions is not recommended. Before replacing an older version, exit it from its tray menu and keep a rollback copy. The application is single-instance: launching it again does not mean the running executable has been replaced.
 
-For continuous, hands-off optimization, install the application as a background service. The installation will close some processes to install or uninstall the service without requiring a system restart, and log files will be generated along with the .exe file. Some application settings will be modified based on recommendations. You can still open the application (GUI) and configure it as desired. The service will utilize these settings.
+Automatic updates are off by default. When enabled, they use this repository's `releases/latest` channel for version information, the EXE and its SHA-256 checksum. A failed checksum prevents replacement. Driver installation is a separate operation requiring its own confirmation.
 
-✅ **Install Service:**
-```cmd
-{path}\WinMemoryCleaner.exe /Install
+### Features
+
+| Entry point | Purpose |
+|---|---|
+| **Overview** | Physical memory, CPU/GPU usage and temperature sources, with the existing memory-cleaning operations available on demand |
+| **Processes** | Search by name or PID; sort by working set, private memory, CPU, GPU or dedicated GPU memory; keep same-name processes in separate rows |
+| **Settings** | Select a 1 / 2 / 5-second refresh interval (2 seconds by default), overlay and temperature options, plus existing cleaning, tray, hotkey, theme and language settings |
+| **Tray** | View memory usage, reopen the window, clean memory or exit |
+| **Monitoring overlay** | Off by default; horizontal or vertical, draggable with saved positioning, click-through and non-focus-stealing by default; monitor-only mode hides the main window while settings remain accessible from the tray |
+
+**Operational risks:** Windows manages its own caches; freeing more memory does not necessarily improve performance. Trimming working sets may cause disk reads or brief stalls. Process exclusions apply only to per-process working-set trimming, not other system-wide cleaning operations. Ending a process can lose unsaved work and requires confirmation. The application verifies the selected process identity and rejects itself, critical and protected processes, but these safeguards cannot eliminate the risk of acting on the wrong ordinary application.
+
+### Sampling and temperature limitations
+
+- Usage readings come from Windows sampling interfaces. Process CPU is normalized across the whole machine; GPU usage uses the busiest engine of a physical GPU. Initial samples, insufficient permissions, exited processes or unsupported drivers may produce no reading. Different tools may use different accounting methods.
+- An unavailable or untrusted temperature is shown as unavailable or `—`, not 0°C. ACPI zones, hotspots and VRAM temperatures are not presented as CPU/GPU core temperatures.
+- Temperature sampling follows UI demand: visible overview/process pages request temperatures, while overlay-only demand depends on enabled temperature items. With the overlay off and the main window hidden or minimized, CPU/GPU, temperature and process-detail sampling without consumers stops; low-frequency memory checks needed by the tray and automatic cleaning remain active.
+- Existing ASUS CPU / NVIDIA NVAPI sources and already-running LHM/OHM WMI providers under their default process names are reused first. The embedded LibreHardwareMonitor **0.9.6** backend is used for missing metrics. If lightweight sources cover all requested temperatures, the backend need not remain running.
+- The independent backend is verified and extracted on demand to `%LOCALAPPDATA%\WinMemoryCleaner.Community\Sensors`, with at most one owned backend process. It adds disk-cache and process-memory overhead; no manual placement of DLLs beside the EXE is needed.
+- Temperature support is not guaranteed for every CPU/GPU, VM, driver or security policy. The overlay is not guaranteed over exclusive fullscreen applications, protected desktops or anti-cheat environments. There is no game injection or protection-bypass feature.
+
+#### Optional temperature driver: confirm before preparation
+
+Routine startup, monitoring, builds, tests and application updates **do not automatically download an installer or install a driver**. Explicitly enabling CPU temperature, or an overlay that includes it, checks the state asynchronously. An installation prompt is shown only when the driver is confirmed missing. Access denied, device-not-ready and unknown-identity states are reported separately rather than treated as missing.
+
+Only after explicit confirmation does the application prepare the pinned [official PawnIO **2.2.0** installer](https://github.com/namazso/PawnIO.Setup/releases/tag/2.2.0). It can download from restricted HTTPS sources or use an official offline package selected by the user. Both paths require the pinned length and SHA-256, Windows signature trust, signer and path checks. An invalid offline package does not silently fall back to a download; canceling selection or preparation does not launch the installer.
+
+An existing driver must exactly match a supported official **2.1.0 / 2.2.0** version and hash and pass signature and device-readiness checks. A signature alone, or a newer version number, is insufficient. Existing shared drivers are **never silently overwritten, downgraded or uninstalled**. There is no silent installation, automatic restart or disabling of Secure Boot/HVCI or other system protections. The application's collection code does not control fans, power, voltage or overclocking. Upstream measurement interfaces may use handles/IOCTLs with read/write permissions; this is not a claim that every low-level access is read-only.
+
+### Requirements and building
+
+- **Main application:** WPF, .NET Framework **4.0**, C# **4**. Availability of added monitoring metrics depends on Windows and its drivers; not all older systems provide every metric.
+- **Optional independent temperature backend:** Windows **10/11 x64**, .NET Framework **4.7.2 or a newer 4.x runtime**. Missing runtime or architecture support is reported with graceful degradation; .NET is not installed automatically.
+- Community settings use the separate `HKLM\SOFTWARE\WinMemoryCleaner.Community` key. Upstream settings are not migrated or overwritten.
+
+From the repository root, use a development environment with Visual Studio / Build Tools MSBuild and NuGet. The `$msbuild` below must come from a Visual Studio Developer PowerShell, not the in-box Framework MSBuild:
+
+```powershell
+nuget restore .\src\packages.config -PackagesDirectory .\src\packages -NonInteractive
+$msbuild = (Get-Command msbuild).Source
+.\build-community.ps1 -Tests -MSBuildPath $msbuild
+# To produce a local candidate package:
+.\build-community.ps1 -Tests -Package -MSBuildPath $msbuild
 ```
 
-❌ **Uninstall Service:**
-```cmd
-{path}\WinMemoryCleaner.exe /Uninstall
-```
+[`build-community.ps1`](build-community.ps1) restores pinned sensor inputs, builds the backend and main application from the same source state, and verifies the actual embedded payload. With `-Tests`, it runs both safety suites and corresponding-source checks. `-Package` requires Visual Studio MSBuild and `-Tests`, preserving C# 4, the complete analyzer set and warnings as errors. The default in-box Framework build is for development only; its backend still needs `-SensorCompilerPath` pointing to a usable Roslyn compiler. It is not a release build.
 
-## 🔧 Troubleshooting
+**Distributable release binaries come only from [Community release build](.github/workflows/community-release.yml).** [Community CI](.github/workflows/community-ci.yml) performs non-publishing builds and safety tests. Outputs use `build/test-results`, `build/sensors` and `dist`. A local candidate, historical report or documentation update does not establish that the current candidate has passed CI, full GUI checks or performance acceptance; consult the results for the matching commit.
 
-### ⚠️ Application flagged as Malware/Virus:
+### Documentation, feedback and licensing
 
-One of the reasons for this **false alarm** is that the application adds entries to the registry and creates a scheduled task to run at startup. Windows doesn't suggest letting applications with administrator privileges run at startup. I understand that, but this is the required method for this functionality. I apologize, but the application cannot perform a deep memory clean without administrator privileges.
+The relative links below target the source repository. The portable ZIP places the guide at `monitoring-guide.zh-CN.md` and sensor notices at `SENSOR-THIRD-PARTY-NOTICES.md` / `SENSOR-SOURCES.md`. Source files and other historical reports are available in the community repository. The detailed guides and reports linked below are in Chinese.
 
-This is a common issue that persists with every new app version. I constantly submit the executable to Microsoft. Usually, it takes up to 72 hours for Microsoft to remove the detection.
+- [Monitoring and process-management guide](docs/monitoring-guide.zh-CN.md)
+- [Community.5 release verification and limitations](docs/release-community-5-validation.zh-CN.md) (Chinese)
+- Candidate history: [p3 driver prompts](docs/cpu-driver-prompt-report.zh-CN.md), [p2 acceptance, including failures](docs/acceptance-p2-01-report.zh-CN.md), [size optimization](docs/size-optimization-report.zh-CN.md), and [refresh optimization](docs/refresh-optimization-report.zh-CN.md). References to `build/...` in reports identify local evidence locations, not public downloads or published assets.
+- Before submitting an issue, remove usernames, computer names, absolute paths, process identities, personal configuration and private content from screenshots/logs. Do not upload complete local evidence directories.
+- Original work © **Igor Mundstein** and contributors. Community changes are maintained by **shabhui and community contributors**, distributed under [GPL-3.0](LICENSE). Full attribution and translation credits are in [CREDITS.md](CREDITS.md); upstream provenance is in [UPSTREAM-TRACKING.md](UPSTREAM-TRACKING.md).
+- Sensor [third-party notices and provenance](sensors/THIRD-PARTY-NOTICES.md) and [corresponding-source notes](sensors/SOURCE-README.md) are retained separately. The corresponding-source bundle is not a claim of byte-for-byte reproducibility of the official signed installer. External links to 2.2.0 driver sources do not mean those sources are included in the retained 2.1.0 source archives.
+- To support the original author, visit [Igor Mundstein's GitHub Sponsors](https://github.com/sponsors/IgorMundstein) or [Ko-fi](https://ko-fi.com/igormundstein). These are not payment channels for the community maintainer.
 
-**Solutions:**
-
-- **Recommended: Use a Package Manager** — If you frequently encounter false positive detections, auto-update issues, or SmartScreen warnings, we **strongly recommend** installing via [Chocolatey](#-chocolatey), [Scoop](#-scoop), or [WinGet](#-winget). These package managers provide:
-  
-  - Automated update mechanisms that bypass Windows security warnings
-  - Community-verified distribution channels
-  - No manual download/verification steps required
-  - Reduced exposure to false positive antivirus flags
-  - Simplified version management with single-command updates
-
-  **Example update commands:**
-
-  ```cmd
-  choco upgrade winmemorycleaner
-  ````
-  
-  ```cmd
-  scoop update winmemorycleaner
-  ```
-
-  ```cmd
-  winget upgrade IgorMundstein.WinMemoryCleaner
-  ```
-
-- If auto-update fails or you need a verified build, download the latest release from the **Download** section above or the Releases page and manually replace your existing `WinMemoryCleaner.exe`. Run the new file as administrator.
-- Long-term solution: please submit the app to Microsoft for malware analysis to reduce false positives: [submit for analysis](https://www.microsoft.com/en-us/wdsi/filesubmission)
-- Quick workaround: add an exclusion to your antivirus app allowlist or to [Windows Security](https://support.microsoft.com/en-us/windows/add-an-exclusion-to-windows-security-811816c0-4dfd-af4a-47e4-c301afe13b26)
-
-#### Verify & replace executable (safe replacement)
-
-If you suspect the binary is corrupted, tampered, or the auto-update fails, follow these safe-replacement steps.
-
-- Simple (non-technical):
-
-  1. Download the latest release from the **Download** section above or the Releases page on GitHub.
-  2. Right-click the downloaded file → **Properties** → **Digital Signatures** and verify the signer and timestamp.
-  3. Rename your current `WinMemoryCleaner.exe` to `WinMemoryCleaner.exe.bak` (backup).
-  4. Move the new `WinMemoryCleaner.exe` into place and run it as administrator.
-  5. If the new version works, delete the `.bak`. To roll back, restore the `.bak` file.
-
-- Advanced (recommended best practices):
-
-  1. Export current settings (registry): `reg export "HKLM\Software\WinMemoryCleaner" WinMemoryCleaner-reg-backup.reg`
-  2. Download the official release and obtain the published SHA256 from the release notes (if provided).
-  3. Verify the file hash:
-
-     ```powershell
-     Get-FileHash .\WinMemoryCleaner.exe -Algorithm SHA256
-     ```
-
--   4. Verify the Authenticode signature:
-  
-     ```powershell
-     Get-AuthenticodeSignature .\WinMemoryCleaner.exe
-     ```
-
-     Confirm `Status` is `Valid` and signer is expected.
-
-  5. Stop running instances (and scheduled task if present) before replacing:
-
-     ```powershell
-     Stop-Process -Name WinMemoryCleaner -ErrorAction SilentlyContinue
-     ```
-
-  6. Backup and replace safely:
-
-     ```powershell
-     Move-Item .\WinMemoryCleaner.exe WinMemoryCleaner.exe.bak
-     Copy-Item C:\path\to\downloaded\WinMemoryCleaner.exe .\
-     Start-Process .\WinMemoryCleaner.exe -Verb RunAs
-     ```
-
-  7. Check Event Viewer (`eventvwr` → Windows Logs → Application) for errors. Roll back by restoring the `.bak` and re-enabling tasks if needed.
-
-### 🔄 Reset to Factory Defaults
-
-**⚠️ Use this to restore factory defaults** - If the app keeps crashing, won't open, or is stuck in a loop, this will terminate frozen windows, disable auto-update, and restore the application to its factory default state.
-
-**What happens when you reset to factory defaults:**
-
-- All your custom settings are reverted to the application's factory defaults (your language choice is preserved)
-- Any frozen or stuck app windows will be closed
-- Auto-update is turned off and must be re-enabled manually in the application settings
-- The app returns to its original state
-
-**Command to run (one-line)**
-
-```cmd
-{path}\WinMemoryCleaner.exe /Reset
-```
-
-**Step-by-step (guided)**
-
-1. Click **Start**, type `cmd`.
-2. Right-click **Command Prompt** → **Run as administrator**.
-3. Type (or drag-and-drop) the full path to `WinMemoryCleaner.exe`, then type a space and add `/Reset`.
-
-   Example:
-
-   ```cmd
-   "C:\Downloads\WinMemoryCleaner.exe" /Reset
-   ```
-
-   > **💡 TIP:** Drag and drop `WinMemoryCleaner.exe` into the Command Prompt — it inserts the full path. If the path contains spaces, enclose it in double quotes before adding ` /Reset`.
-
-4. Press **Enter**.
-5. The app will reset and close. Open it normally to use it again.
-
-### 📋 View Application Logs
-
-All optimization activities and essential operations are logged to the Windows Event Viewer for a transparent audit trail.
-
-**Steps to view logs:**
-1. Press **Win + R**, type **eventvwr**, and press Enter
-2. Navigate to `Windows Logs > Application`
-3. Look for events with the source name **Windows Memory Cleaner**
-
-[![](./docs/assets/images/windows-event-log.png)](#-logs)
-
-## 🛠️ Complementary Tools
-
-While **Windows Memory Cleaner** excels at efficiently managing and freeing up memory, the following tools can provide even deeper insights into your system's memory usage and help with advanced troubleshooting:
-
-### 🔧 [Process Explorer](https://learn.microsoft.com/en-us/sysinternals/downloads/process-explorer)
-
-An advanced task manager from Microsoft Sysinternals that goes beyond what's available in Windows Task Manager. It provides comprehensive information about processes, including their memory usage, handles, and DLLs. Useful for identifying specific applications or services that might be consuming excessive memory.
-
-### 🔧 [RAMMap](https://learn.microsoft.com/en-us/sysinternals/downloads/rammap)
-
-A powerful physical memory usage analysis utility from Microsoft Sysinternals. RAMMap provides detailed, real-time information about how Windows is allocating physical memory, including how much is in use by processes, drivers, the kernel, and various cached data. **It also contains some cleaning features that address certain memory areas similar to Windows Memory Cleaner.** It's an excellent tool to use alongside WinMemoryCleaner to understand precisely *where* memory is being used before and after an optimization.
-
-## ❓ Frequently Asked Questions (FAQ)
-
-### 💭 Is this app still useful on modern PCs, and how is it not 'snake oil'?
-
-This is an excellent question that gets to the core of this project's philosophy.
-
-**The short answer:** Yes, it's still useful for a massive number of users, and it's the opposite of snake oil because it's built on transparency and verifiable proof.
-
-**The longer answer:** We've all been burnt. The PC utility market has a dark history of deceptive "boosters" that preyed on users' frustrations. They were the T-Virus of the software world, promising performance but often making things worse with shady, undocumented tricks. That history creates a lot of justified prejudice.
-
-WinMemoryCleaner is the **antivirus serum**. It's not a magical cure-all, but a targeted, clean, and honest tool. Here's why it's different and still relevant:
-
-* **It's for the Majority, Not Just the Elite:** While a brand-new PC with 64GB of RAM might not see a dramatic difference, that's not the reality for the average user. To understand what typical PCs look like, we can look at the Steam Hardware & Software Survey, which collects data from millions of gamers worldwide. According to this survey, the most common amount of RAM is just 16GB. This tool is built for that majority: the student with an 8GB laptop, the gamer on a budget with 16GB, and the developer running multiple virtual machines who needs to reclaim every last megabyte to keep their system running smoothly.
-* **It Gives You Control:** Modern Windows is good at memory management, but it's automated. It doesn't know you're about to launch a massive game and need all available RAM *right now*. This tool lets you make that decision yourself by clearing cached memory (the Standby List) on demand.
-* **It's Verifiable:** As shown in the "Proof of Concept" section, you don't have to trust us blindly. You can use Windows' own tools to see the app working in real-time. We're not hiding anything.
-* **It's Built on Honesty:** The code is open-source, and every function it performs is a documented, native Windows API call. We are simply providing a safe and easy-to-use interface for powerful system maintenance tasks that already exist.
-
-This project exists to serve the users who were left behind by the march of technology, and to restore faith that a utility can be both effective and honest.
-
-### 💭 What are the project requirements?
-
-- Logging to Windows Event Viewer
-- Minimalistic user interface using Windows Presentation Foundation (WPF) and single-page application (SPA) architecture
-- Model-View-ViewModel (MVVM) design pattern
-- No third-party dependencies
-- Portable (Single executable file)
-- Right-to-left language support and bidirectional text
-- Use of S.O.L.I.D. principles in object-oriented programming (limited due to the legacy .NET 4.0 framework)
-- Use of Windows API methods for memory management
-- Windows retro-compatibility (Windows XP, Server 2003, and later)
-
-### 💭 Where does the app save the settings?
-
-Upstream saves them in the Windows registry path `Computer\HKEY_LOCAL_MACHINE\Software\WinMemoryCleaner`. This community build uses its own independent path `Computer\HKEY_LOCAL_MACHINE\Software\WinMemoryCleaner.Community` and never reads, migrates, or overwrites the upstream settings.
-
-### 💭 Why has the app been flagged as Malware/Virus and blocked by Windows Defender, SmartScreen, or Antivirus?
-
-One of the reasons for this **false alarm** is that the application adds entries to the registry and creates a scheduled task to run at startup. Windows doesn't suggest letting applications with administrator privileges run at startup. I understand that, but this is the required method for this functionality. I apologize, but the application cannot perform a deep memory clean without administrator privileges.
-
-That's a common issue that persists with every new app version. I constantly submit the executable to Microsoft. Usually, it takes up to 72 hours for Microsoft to remove the detection.
-It helps if more users [submit the app for malware analysis](https://www.microsoft.com/en-us/wdsi/filesubmission)
-
-Meanwhile, as a workaround, you can [add an exclusion to Windows Security](https://support.microsoft.com/en-us/windows/add-an-exclusion-to-windows-security-811816c0-4dfd-af4a-47e4-c301afe13b26)
-
-## 🌐 Translation
-
-If you're a native speaker of a language other than English, you can contribute by translating the [English.json](/src/Resources/Localization/English.json) file.
-
-**Please note:** Translated texts should be provided in **lowercase**. The application will automatically handle capitalization as needed for the user interface.
-
-### 🔬 How to Test Your Translation
-
-You can test any translation by creating a file alongside the executable:
-
-1. Visit [https://ss64.com/locale.html](https://ss64.com/locale.html) to get the **locale description** for your language.
-2. Save your translation as **{locale-description}.json** using **UTF-8** character encoding.
-3. Launch the application. If successful, the new language and your changes will be visible.
-4. Once tested, please either submit a pull request or submit the file via the **[Translation Request](https://github.com/IgorMundstein/WinMemoryCleaner/issues/new?template=translation_request.yml)** issue template.
-
-### 👨‍💻 For Developers
-
-If you are a software developer, you can integrate the new file directly into the project:
-
-1. Add the new file to the `Resources\Localization` folder.
-2. Change the file's **Build Action** property to `Embedded Resource`.
-3. Rebuild and run the `WinMemoryCleaner` project.
-
-When new versions require translation updates, we may use AI tools to provide a baseline. We always value and encourage contributions from native speakers to refine and perfect these translations.
-
-| Language | Contributor(s) | Language | Contributor(s) |
-|:---|:---|:---|:---|
-| 🇦🇱&nbsp;Albanian | [Omer Rustemi](https://github.com/omerrustemicode) | 🇯🇵&nbsp;Japanese | [dai](https://github.com/dai) |
-| 🇸🇦&nbsp;Arabic | [Abderraouf FELLAHI](https://github.com/flh-raouf), [Abdulmajeed Al-Rajhi](https://github.com/Abdulmajeed-Alrajhi) | 🇰🇷&nbsp;Korean | [VenusGirl](https://github.com/VenusGirl) |
-| 🇧🇬&nbsp;Bulgarian | [Konstantin](https://github.com/constantinejc) | 🇲🇰&nbsp;Macedonian | [Dimitrij Gjorgji](https://github.com/Cathadox) |
-| 🇨🇳&nbsp;Chinese&nbsp;(Simplified) | [KaiHuaDou](https://github.com/KaiHuaDou), [Kun Zhao](https://github.com/kzhdev), [Rayden](https://github.com/raydenake22) | 🇳🇴&nbsp;Norwegian | [Dan](https://github.com/danorse) |
-| 🇨🇳&nbsp;Chinese&nbsp;(Traditional) | [Rayden](https://github.com/raydenake22), [rtyrtyrtyqw](https://github.com/rtyrtyrtyqw) | 🇮🇷&nbsp;Persian | [Kavian](https://github.com/KavianK) |
-| 🇳🇱&nbsp;Dutch | [Jesse](https://github.com/dragonhuntermc), [hax4dazy](https://github.com/hax4dazy) | 🇵🇱&nbsp;Polish | [Patryk](https://github.com/Fresta56) |
-| 🇫🇷&nbsp;French | [William VINCENT](https://github.com/wixaw) | 🇵🇹&nbsp;Portuguese&nbsp;(Portugal) | AI |
-| 🇩🇪&nbsp;German | [Calvin](https://github.com/Slluxx), [Niklas Englmeier](https://github.com/iamniklas), [Steve](https://github.com/uDEV2019) | 🇷🇺&nbsp;Russian | [Ruslan](https://github.com/ruslooob) |
-| 🇬🇷&nbsp;Greek | [Theodoros Katsageorgis](https://github.com/tkatsageorgis) | 🇷🇸&nbsp;Serbian (Cyrillic & Latin) | [Dragoš Milošević](https://github.com/DragorMilos), [Radoš Milićev](https://github.com/rammba) |
-| 🇮🇱&nbsp;Hebrew | [Eliezer Bloy](https://github.com/eliezerbloy) | 🇸🇮&nbsp;Slovenian | [Jadran Rudec](https://github.com/JadranR) |
-| 🇭🇺&nbsp;Hungarian | [gycsisz](https://github.com/gycsisz) | 🇪🇸&nbsp;Spanish | [Ajneb Al Revés](https://github.com/AjnebAlReves), [Fran](https://github.com/FrannDzs) |
-| 🇮🇩&nbsp;Indonesian | [Mochammad Misbahus Surur](https://github.com/Eskeyz), [Minids](https://github.com/tdnphantom) | 🇹🇭&nbsp;Thai | [nongice](https://github.com/21icepril) |
-| 🇮🇪&nbsp;Irish | [Happygolucky254](https://github.com/Happygolucky254) | 🇹🇷&nbsp;Turkish | [Rıza Emet](https://github.com/rizaemet), [Viollje](https://github.com/Viollje) |
-| 🇮🇹&nbsp;Italian | [Michele](https://github.com/wintrymichi) | 🇺🇦&nbsp;Ukrainian | [Riebi](https://github.com/RieBi), [Oleksandr](https://github.com/Mariachi1231) |
-
-## ❤️ Contribute to the Project
-> **Community note**: the links below belong to the **original author, Igor Mundstein**. This community continuation adds no donation channel of its own; the maintainers receive nothing from them.
-
-In the past, I faced challenges with the proper hardware and software needed to fully enjoy technology and gaming. It was a constant battle to squeeze every last drop of performance out of a limited machine.
-
-Although I may not rely on this tool as much as I once did, I continue to maintain it in my free time for a simple reason: to assist others who still encounter similar challenges. This project is a contribution to the field of technology and a tribute to the wonderful open-source community that supports us all.
-
-If you find this app helpful, please consider tipping. Your contribution helps keep the project alive, optimized, and free for everyone.
-
-| 💰 Cash | 🪙 Crypto |
-| :--- | :--- |
-| [Sponsor on GitHub](https://github.com/sponsors/IgorMundstein) | [Bitcoin (BTC)](https://www.blockchain.com/btc/address/bc1qu884q5r2uqugvdhyk8l6waakumeve7jykqp7ap) |
-| [Buy me a coffee on Ko-fi](https://ko-fi.com/igormundstein) | [Ethereum (ETH)](https://www.blockchain.com/explorer/addresses/eth/0xb71A94733B0578D155D9A765E0d2C4dA0f44156d) |
+[返回中文 / Back to Chinese](#zh-cn)

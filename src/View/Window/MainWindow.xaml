@@ -19,7 +19,7 @@
                         <MenuItem Click="OnDonateMenuItemClick" Header="{Binding Path=(local:Localizer.String).Donate}"/>
                     </ContextMenu></Button.Resources>
                 </Button>
-                <CheckBox IsChecked="{Binding CompactMode}" Content="{Binding Monitoring.Labels[Compact], RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}" Margin="12,0"/>
+                <CheckBox IsChecked="{Binding CompactMode}" Content="{Binding Monitoring.Labels[Compact], RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}" BorderBrush="{DynamicResource SecondaryDisabled}" Margin="12,0"/>
                 <Button Content="—" Padding="10,6" Click="OnMinimizeButtonClick" ToolTip="{Binding Path=(local:Localizer.String).Minimize}" Margin="0,0,4,0"/>
                 <Button Content="×" Padding="10,6" Click="OnCloseButtonClick" ToolTip="{Binding Path=(local:Localizer.String).Close}"/>
             </StackPanel>
@@ -37,7 +37,7 @@
                 <RadioButton x:Name="SettingsNav" Content="{Binding Labels[Settings]}" Tag="2" GroupName="Pages" Style="{StaticResource MonitorNav}" Checked="OnPageChecked"/>
             </DockPanel>
             <ScrollViewer x:Name="OverviewPage" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <StackPanel>
+                <StackPanel Margin="0,0,12,8">
                     <Border Style="{StaticResource MonitorPanel}" Margin="0,0,0,14">
                         <StackPanel>
                             <Grid><TextBlock Text="{Binding Labels[Memory]}" Style="{StaticResource MonitorLabel}"/><TextBlock Text="{Binding MemoryText}" FontSize="28" FontWeight="SemiBold" HorizontalAlignment="Right"/></Grid>
@@ -105,14 +105,18 @@
                 <StackPanel Grid.Row="2">
                     <TextBlock Text="{Binding Labels[ProcessNote]}" Style="{StaticResource MonitorNote}"/>
                     <WrapPanel><Button x:Name="TrimSelected" Content="{Binding Labels[Trim]}" Click="OnTrimClick" Style="{StaticResource ProcessActionButton}" Margin="0,0,10,0"/><Button x:Name="TerminateSelected" Content="{Binding Labels[Terminate]}" Click="OnTerminateClick" BorderBrush="#D85A65" Foreground="#D34B58" Style="{StaticResource ProcessActionButton}"/></WrapPanel>
-                    <TextBlock Text="{Binding ActionStatus}" TextWrapping="Wrap" Margin="0,8,0,0"/><TextBlock Text="{Binding Labels[TrimNote]}" Style="{StaticResource MonitorNote}"/>
+                    <TextBlock Text="{Binding ActionStatus}" TextWrapping="Wrap" Margin="0,8,0,0">
+                        <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+                            <DataTrigger Binding="{Binding ActionStatus}" Value=""><Setter Property="Visibility" Value="Collapsed"/></DataTrigger>
+                        </Style.Triggers></Style></TextBlock.Style>
+                    </TextBlock><TextBlock Text="{Binding Labels[TrimNote]}" Style="{StaticResource MonitorNote}"/>
                 </StackPanel>
             </Grid>
             <ScrollViewer x:Name="SettingsPage" Grid.Row="1" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <StackPanel>
+                <StackPanel Margin="0,0,12,8">
                     <Border Style="{StaticResource MonitorPanel}" Margin="0,0,0,16"><StackPanel>
                         <TextBlock Text="{Binding Labels[Overlay]}" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,14"/>
-                        <CheckBox x:Name="OverlayToggle" Content="{Binding Labels[OverlayEnabled]}" IsChecked="{Binding OverlayEnabled}" Margin="0,0,0,12"/>
+                        <CheckBox x:Name="OverlayToggle" Content="{Binding Labels[OverlayEnabled]}" IsChecked="{Binding OverlayEnabled}" Click="OnTemperatureFeatureClick" Margin="0,0,0,12"/>
                         <CheckBox Content="{Binding Labels[ClickThrough]}" IsChecked="{Binding ClickThrough}" Margin="0,0,0,14"/>
                         <WrapPanel><StackPanel Margin="0,0,18,12"><TextBlock Text="{Binding Labels[Display]}" Style="{StaticResource MonitorLabel}"/><ComboBox ItemsSource="{Binding Displays}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding OverlayScreen}" MinWidth="220" DropDownOpened="OnDisplayDropDown"/></StackPanel>
                             <StackPanel Margin="0,0,18,12"><TextBlock Text="{Binding Labels[Position]}" Style="{StaticResource MonitorLabel}"/><ComboBox x:Name="OverlayCornerChoice" SelectedIndex="{Binding OverlayCorner}" MinWidth="120"><ComboBoxItem Content="{Binding Labels[TopLeft]}"/><ComboBoxItem Content="{Binding Labels[TopRight]}"/><ComboBoxItem Content="{Binding Labels[BottomLeft]}"/><ComboBoxItem Content="{Binding Labels[BottomRight]}"/><ComboBoxItem Content="{Binding Labels[Custom]}"/></ComboBox></StackPanel>
@@ -120,11 +124,14 @@
                             <Button Content="{Binding Labels[Drag]}" Style="{StaticResource MonitorButton}" Click="OnDragOverlay" VerticalAlignment="Bottom" Margin="0,0,0,12"/>
                         </WrapPanel>
                         <TextBlock Text="{Binding Labels[Items]}" Style="{StaticResource MonitorLabel}"/>
-                        <WrapPanel><CheckBox Content="{Binding Labels[Cpu]}" IsChecked="{Binding ShowCpu}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[Gpu]}" IsChecked="{Binding ShowGpu}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[Memory]}" IsChecked="{Binding ShowMemory}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[CpuTemperature]}" IsChecked="{Binding ShowCpuTemperature}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[GpuTemperature]}" IsChecked="{Binding ShowGpuTemperature}" Margin="0,0,18,10"/></WrapPanel>
-                        <DockPanel Margin="0,2,0,8" LastChildFill="True">
-                            <Button x:Name="InstallTemperatureDriver" DockPanel.Dock="Right" Content="{Binding Labels[InstallSensorDriver]}" Click="OnInstallTemperatureDriver" IsEnabled="{Binding CanInstallDriver}" Style="{StaticResource MonitorButton}" Margin="12,0,0,0"/>
-                            <TextBlock x:Name="TemperatureStatus" Text="{Binding TemperatureStatusText}" ToolTip="{Binding TemperatureStatusDetail}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                        </DockPanel>
+                        <WrapPanel><CheckBox Content="{Binding Labels[Cpu]}" IsChecked="{Binding ShowCpu}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[Gpu]}" IsChecked="{Binding ShowGpu}" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[Memory]}" IsChecked="{Binding ShowMemory}" Margin="0,0,18,10"/><CheckBox x:Name="CpuTemperatureToggle" Content="{Binding Labels[CpuTemperature]}" IsChecked="{Binding ShowCpuTemperature}" Click="OnTemperatureFeatureClick" Margin="0,0,18,10"/><CheckBox Content="{Binding Labels[GpuTemperature]}" IsChecked="{Binding ShowGpuTemperature}" Margin="0,0,18,10"/></WrapPanel>
+                        <TextBlock x:Name="TemperatureStatus" Text="{Binding TemperatureStatusText}" ToolTip="{Binding TemperatureStatusDetail}" TextWrapping="Wrap" Margin="0,2,0,8"/>
+                        <WrapPanel>
+                            <Button x:Name="InstallTemperatureDriver" Content="{Binding Labels[InstallSensorDriver]}" Click="OnInstallTemperatureDriver" IsEnabled="{Binding CanInstallDriver}" Style="{StaticResource MonitorButton}" Margin="0,0,10,8"/>
+                            <Button x:Name="SelectTemperatureDriverInstaller" Content="{Binding Labels[SelectSensorInstaller]}" Click="OnSelectTemperatureDriverInstaller" IsEnabled="{Binding CanInstallDriver}" Style="{StaticResource MonitorButton}" Margin="0,0,10,8"/>
+                            <Button x:Name="CancelTemperatureDriverPreparation" Content="{Binding Labels[CancelSensorPreparation]}" Click="OnCancelTemperatureDriverPreparation" IsEnabled="{Binding CanCancelDriverPreparation}" Style="{StaticResource MonitorButton}" Margin="0,0,0,8"/>
+                        </WrapPanel>
+                        <TextBlock Text="{Binding Labels[SensorInstallerSourceNote]}" Style="{StaticResource MonitorNote}"/>
                         <TextBlock Text="{Binding Labels[OverlayNote]}" Style="{StaticResource MonitorNote}"/>
                         <Button x:Name="ShowMonitorOnly" Content="{Binding Labels[OnlyMonitor]}" Click="OnMonitorOnlyClick" Style="{StaticResource MonitorButton}" HorizontalAlignment="Left" Margin="0,8,0,0"/>
                         <TextBlock Text="{Binding Labels[MonitorOnlyNote]}" Style="{StaticResource MonitorNote}"/>
@@ -138,8 +145,17 @@
                 <!-- Hidden (not Collapsed) keeps the footer height stable while progress replaces the summary. -->
                 <StackPanel x:Name="MemorySummary" VerticalAlignment="Center">
                     <StackPanel.Style><Style TargetType="StackPanel"><Style.Triggers><DataTrigger Binding="{Binding IsOptimizationRunning}" Value="True"><Setter Property="Visibility" Value="Hidden"/></DataTrigger></Style.Triggers></Style></StackPanel.Style>
-                    <TextBlock Text="{Binding PhysicalMemoryHeader}"/><TextBlock Text="{Binding VirtualMemoryHeader}" Visibility="{Binding ShowVirtualMemory, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                    <TextBlock Text="{Binding Monitoring.Labels[ResourceNote], RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}" Foreground="{DynamicResource SecondaryDisabled}" TextWrapping="Wrap" Margin="0,6,14,0" Visibility="{Binding CompactMode, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                    <TextBlock x:Name="CompactMemoryUsage" Visibility="{Binding CompactMode, Converter={StaticResource BooleanToVisibilityConverter}}" TextTrimming="CharacterEllipsis" Margin="0,0,14,0">
+                        <TextBlock.Text><MultiBinding StringFormat="{}{0} {1}% · {2:0.#} {3} / {4:0.#} {5}">
+                            <Binding Path="(local:Localizer.String).PhysicalMemory"/><Binding Path="Computer.Memory.Physical.Used.Percentage"/>
+                            <Binding Path="Computer.Memory.Physical.Used.Value"/><Binding Path="Computer.Memory.Physical.Used.Unit"/>
+                            <Binding Path="Computer.Memory.Physical.Total.Value"/><Binding Path="Computer.Memory.Physical.Total.Unit"/>
+                        </MultiBinding></TextBlock.Text>
+                    </TextBlock>
+                    <TextBlock Visibility="{Binding ShowVirtualMemory, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <TextBlock.Text><MultiBinding StringFormat="{}{0} ({1:0.#} {2})"><Binding Path="(local:Localizer.String).VirtualMemory"/><Binding Path="Computer.Memory.Virtual.Total.Value"/><Binding Path="Computer.Memory.Virtual.Total.Unit"/></MultiBinding></TextBlock.Text>
+                    </TextBlock>
+                    <TextBlock Text="{Binding Monitoring.Labels[ResourceNote], RelativeSource={RelativeSource AncestorType={x:Type local:MainWindow}}}" Foreground="{DynamicResource SecondaryDisabled}" TextWrapping="Wrap" Margin="0,0,14,0" Visibility="{Binding CompactMode, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                 </StackPanel>
                 <StackPanel x:Name="OptimizationProgressPanel" VerticalAlignment="Center" Margin="0,0,14,0" Visibility="{Binding IsOptimizationRunning, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <DockPanel LastChildFill="True">
@@ -151,7 +167,7 @@
                     </DockPanel>
                     <ProgressBar x:Name="OptimizationProgressBar" Maximum="{Binding OptimizationProgressTotal, Mode=OneWay}" Value="{Binding OptimizationProgressValue, Mode=OneWay}" Height="6" Margin="0,8,0,0" Style="{StaticResource MonitorProgress}"/>
                 </StackPanel>
-                <Button x:Name="Optimize" Grid.Column="1" Content="{Binding Path=(local:Localizer.String).Optimize}" Command="{Binding OptimizeCommand}" Padding="26,12" BorderBrush="{DynamicResource Accent}" Style="{StaticResource MonitorButton}" VerticalAlignment="Center"/>
+                <Button x:Name="Optimize" Grid.Column="1" Content="{Binding Path=(local:Localizer.String).Optimize}" Command="{Binding OptimizeCommand}" IsEnabled="{Binding CanOptimize}" Padding="26,12" BorderBrush="{DynamicResource Accent}" Style="{StaticResource MonitorButton}" VerticalAlignment="Center"/>
             </Grid>
         </Border>
         <ResizeGrip x:Name="WindowResizeGrip" Grid.Row="2" HorizontalAlignment="Right" VerticalAlignment="Bottom" Width="14" Height="14"/>

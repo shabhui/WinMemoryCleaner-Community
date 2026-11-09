@@ -136,11 +136,22 @@ public static class MonitoringProbe
         using (var first = new OwnedChild(Path.Combine(_output, "owned-child-a-" + Guid.NewGuid().ToString("N") + ".ready")))
         using (var other = new OwnedChild(Path.Combine(_output, "owned-child-b-" + Guid.NewGuid().ToString("N") + ".ready")))
         {
+            Save("owned-child-identities.json", new[] {
+                new Dictionary<string, object> { { "pid", first.Process.Id }, { "creationFileTime", first.Created }, { "imagePath", first.Process.MainModule.FileName } },
+                new Dictionary<string, object> { { "pid", other.Process.Id }, { "creationFileTime", other.Created }, { "imagePath", other.Process.MainModule.FileName } }
+            });
             var target = ChildSnapshot(monitor, first);
             var otherTarget = ChildSnapshot(monitor, other);
             Require((string)Get(target, "Name") == (string)Get(otherTarget, "Name"), "Children must demonstrate separate same-name identities.");
             var service = Activator.CreateInstance(_assembly.GetType("WinMemoryCleaner.ProcessActionService", true));
             var execute = service.GetType().GetMethod("Execute");
+            var staleIdentity = Activator.CreateInstance(target.GetType());
+            foreach (var property in target.GetType().GetProperties())
+                if (property.CanRead && property.CanWrite) property.SetValue(staleIdentity, property.GetValue(target, null), null);
+            staleIdentity.GetType().GetProperty("CreationTime").SetValue(staleIdentity, first.Created + 1, null);
+            var rejected = execute.Invoke(service, new object[] { staleIdentity, true, true });
+            Require(Get(rejected, "Outcome").ToString() == "IdentityChanged" && !first.Process.HasExited && !other.Process.HasExited, "Mismatched creation identity must reject the action and leave both owned children alive.");
+            events.Add(new Dictionary<string, object> { { "case", "creation-identity-mismatch" }, { "pid", first.Process.Id }, { "result", rejected }, { "outcome", Get(rejected, "Outcome").ToString() }, { "bothAlive", true } });
             first.Process.Refresh(); long before = first.Process.WorkingSet64;
             var cancelled = execute.Invoke(service, new object[] { target, true, false });
             Require(Get(cancelled, "Outcome").ToString() == "NotConfirmed" && !first.Process.HasExited && !other.Process.HasExited, "Cancellation must leave both children alive.");

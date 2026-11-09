@@ -70,6 +70,16 @@ namespace WinMemoryCleaner.Test
             }
         }
         [Test]
+        public void RuntimePayloadDoesNotRequireTheOptionalDriverInstaller()
+        {
+            _files.Remove("PawnIO_setup.exe");
+            using(var lease=Payload().Prepare())
+            {
+                Assert.IsTrue(File.Exists(lease.Executable));Assert.IsFalse(File.Exists(lease.Installer));
+                Assert.AreEqual(3,Directory.GetFiles(lease.Directory).Length);
+            }
+        }
+        [Test]
         public void TransientFileReadHandleDoesNotFailVerifiedPreparation()
         {
             SafeFileHandle blocker = null;

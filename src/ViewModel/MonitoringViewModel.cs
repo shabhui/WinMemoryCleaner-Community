@@ -40,6 +40,21 @@ namespace WinMemoryCleaner
         private int _pending;
         private int _sampleCount, _processSampleCount, _temperatureSampleCount;
         private string _failure, _actionStatus=string.Empty;
+        private string _actionKey, _actionPrefix, _actionDetail;
+
+        // Publish a complete display snapshot before notifying any binding. Getters then
+        // reuse formatted text, and sub-precision changes do not trigger WPF layout work.
+        private struct DisplayReadings
+        {
+            internal string CpuText, GpuText, CpuTemperatureText, GpuTemperatureText;
+            internal string OverlayCpuText, OverlayGpuText, OverlayCpuTemperatureText, OverlayGpuTemperatureText;
+            internal string CpuDetail, GpuDetail, CpuTemperatureDetail, GpuTemperatureDetail;
+            internal string GpuName, MemoryText;
+        }
+        private static readonly IList<int> _refreshChoices = Array.AsReadOnly(new[] { 1, 2, 5 });
+        private DisplayReadings _readings;
+        private string _sensorStatusText, _sensorStatusDetail;
+        private bool _reportedInstalling, _reportedCanInstall, _reportedCanCancel;
 
         public MonitoringViewModel(MainViewModel cleaner, Dispatcher dispatcher)
             : this(cleaner,dispatcher,delegate { return new ResourceMonitor(); }) { }
@@ -58,11 +73,12 @@ namespace WinMemoryCleaner
             _pump=new MonitoringPump(Sample, Suspend);
             Localizer.StaticPropertyChanged+=OnLanguageChanged;
             RefreshDisplays();
+            RefreshReadings();
         }
         public MonitorText Labels { get; private set; }
         public ListCollectionView ProcessesView { get { return _processes.View; } }
         public IList<DisplayChoice> Displays { get; private set; }
-        public IList<int> RefreshChoices { get { return new List<int>{1,2,5}; } }
+        public IList<int> RefreshChoices { get { return _refreshChoices; } }
         public int OverlayLayout
         {
             get { return _options.Layout; }
@@ -114,20 +130,21 @@ namespace WinMemoryCleaner
         public int SampleCount { get { return _sampleCount; } }
         public int ProcessSampleCount { get { return _processSampleCount; } }
         public int TemperatureSampleCount { get { return _temperatureSampleCount; } }
-        public string CpuText { get { return Reading(_last==null?null:_last.CpuUsage,false); } }
-        public string GpuText { get { return Reading(_last==null?null:_last.GpuUsage,false); } }
-        public string CpuTemperatureText { get { return Reading(_last==null?null:_last.CpuTemperature,true); } }
-        public string GpuTemperatureText { get { return Reading(_last==null?null:_last.GpuTemperature,true); } }
-        public string OverlayCpuText { get { return OverlayReading(_last==null?null:_last.CpuUsage,false); } }
-        public string OverlayGpuText { get { return OverlayReading(_last==null?null:_last.GpuUsage,false); } }
-        public string OverlayCpuTemperatureText { get { return OverlayReading(_last==null?null:_last.CpuTemperature,true); } }
-        public string OverlayGpuTemperatureText { get { return OverlayReading(_last==null?null:_last.GpuTemperature,true); } }
-        public string CpuDetail { get { return Detail(_last==null?null:_last.CpuUsage,false); } }
-        public string GpuDetail { get { return Detail(_last==null?null:_last.GpuUsage,false); } }
-        public string CpuTemperatureDetail { get { return Detail(_last==null?null:_last.CpuTemperature,true); } }
-        public string GpuTemperatureDetail { get { return Detail(_last==null?null:_last.GpuTemperature,false); } }
+        public string CpuText { get { return _readings.CpuText; } }
+        public string GpuText { get { return _readings.GpuText; } }
+        public string CpuTemperatureText { get { return _readings.CpuTemperatureText; } }
+        public string GpuTemperatureText { get { return _readings.GpuTemperatureText; } }
+        public string OverlayCpuText { get { return _readings.OverlayCpuText; } }
+        public string OverlayGpuText { get { return _readings.OverlayGpuText; } }
+        public string OverlayCpuTemperatureText { get { return _readings.OverlayCpuTemperatureText; } }
+        public string OverlayGpuTemperatureText { get { return _readings.OverlayGpuTemperatureText; } }
+        public string CpuDetail { get { return _readings.CpuDetail; } }
+        public string GpuDetail { get { return _readings.GpuDetail; } }
+        public string CpuTemperatureDetail { get { return _readings.CpuTemperatureDetail; } }
+        public string GpuTemperatureDetail { get { return _readings.GpuTemperatureDetail; } }
         public bool IsInstallingDriver { get { return _installer!=null&&_installer.IsInstalling; } }
         public bool CanInstallDriver { get { return !_disposed&&!IsInstallingDriver; } }
+        public bool CanCancelDriverPreparation { get { return !_disposed&&_installer!=null&&_installer.CanCancelPreparation; } }
         public string TemperatureStatusText
         {
             get
@@ -151,10 +168,12 @@ namespace WinMemoryCleaner
                 ?Labels["SensorInstallFailed"]+actual.Substring("InstallFailed".Length):actual;
         }
         internal bool BeginDriverInstallation(bool explicitlyConfirmed)
+        { return BeginDriverInstallation(explicitlyConfirmed,null); }
+        internal bool BeginDriverInstallation(bool explicitlyConfirmed,string localInstallerPath)
         {
             if(_disposed||!explicitlyConfirmed||IsInstallingDriver)return false;
             if(_installer==null)_installer=_createInstaller(OnDriverInstallationFinished);
-            bool began=_installer.Begin(true);
+            bool began=_installer.Begin(true,localInstallerPath);
             if(began)
             {
                 if(_installTimer==null)
@@ -166,12 +185,31 @@ namespace WinMemoryCleaner
             }
             RaiseSensorStatus();return began;
         }
+        internal bool CancelDriverPreparation()
+        {
+            bool cancelled=_installer!=null&&_installer.CancelPreparation();
+            if(!_disposed)RaiseSensorStatus();return cancelled;
+        }
         private void OnDriverInstallationFinished() { if(!_disposed)_session.RequestDriverReset(); }
         private void OnInstallationProgress(object sender,EventArgs args)
         { if(_disposed||!IsInstallingDriver)_installTimer.Stop();if(!_disposed)RaiseSensorStatus(); }
         private void RaiseSensorStatus()
-        { foreach(string name in new[]{"TemperatureStatusText","TemperatureStatusDetail","IsInstallingDriver","CanInstallDriver"})RaisePropertyChanged(name); }
-        public string GpuName { get { return _last==null?Labels["WarmingUp"]:_last.GpuName; } }
+        {
+            // Installer state changes on a worker thread, so its getters remain live.
+            // Only the last published values are cached for notification comparisons.
+            string text=TemperatureStatusText, detail=TemperatureStatusDetail;
+            bool installing=IsInstallingDriver, canInstall=CanInstallDriver, canCancel=CanCancelDriverPreparation;
+            string oldText=_sensorStatusText, oldDetail=_sensorStatusDetail;
+            bool oldInstalling=_reportedInstalling, oldCanInstall=_reportedCanInstall, oldCanCancel=_reportedCanCancel;
+            _sensorStatusText=text; _sensorStatusDetail=detail;
+            _reportedInstalling=installing; _reportedCanInstall=canInstall; _reportedCanCancel=canCancel;
+            NotifyTextChanged("TemperatureStatusText",oldText,text);
+            NotifyTextChanged("TemperatureStatusDetail",oldDetail,detail);
+            if(oldInstalling!=installing)RaisePropertyChanged("IsInstallingDriver");
+            if(oldCanInstall!=canInstall)RaisePropertyChanged("CanInstallDriver");
+            if(oldCanCancel!=canCancel)RaisePropertyChanged("CanCancelDriverPreparation");
+        }
+        public string GpuName { get { return _readings.GpuName; } }
         public string MemoryText
         {
             get
@@ -180,7 +218,13 @@ namespace WinMemoryCleaner
                 return memory==null?Labels["Unavailable"]:memory.Physical.Used.Percentage.ToString(CultureInfo.InvariantCulture)+"%";
             }
         }
-        public string ActionStatus { get { return _actionStatus; } set { _actionStatus=value??string.Empty; RaisePropertyChanged("ActionStatus"); } }
+        public string ActionStatus
+        {
+            get { return _actionKey==null?_actionStatus:(_actionPrefix??string.Empty)+Labels[_actionKey]+(_actionDetail??string.Empty); }
+            set { _actionKey=null;_actionStatus=value??string.Empty;RaisePropertyChanged("ActionStatus"); }
+        }
+        internal void SetActionStatus(string key,string prefix=null,string detail=null)
+        { _actionKey=key;_actionPrefix=prefix;_actionDetail=detail;RaisePropertyChanged("ActionStatus"); }
         private bool Item(int flag) { return (_options.Items&flag)!=0; }
         private void SetItem(int flag,bool value,string name)
         {
@@ -213,8 +257,7 @@ namespace WinMemoryCleaner
             {
                 _last.CpuTemperature=_last.GpuTemperature=MetricValue.Missing(MetricStatus.Disabled,"Temperature sampling is not requested");
                 _last.SensorBackendStatus="Disabled";
-                foreach(string name in new[]{"CpuTemperatureText","GpuTemperatureText","OverlayCpuTemperatureText","OverlayGpuTemperatureText","CpuTemperatureDetail","GpuTemperatureDetail"})RaisePropertyChanged(name);
-                RaiseSensorStatus();
+                RefreshReadings();
             }
             _cleaner.SetMemoryRefreshInterval(demand.CpuGpu?RefreshSeconds:5);
             _pump.SetDemand(demand,RefreshSeconds);
@@ -269,8 +312,7 @@ namespace WinMemoryCleaner
                         _last=snapshot; _failure=failure;
                         if(demand.Processes)_processes.Apply(snapshot,failure);
                         if(snapshot!=null)snapshot.Processes.Clear();
-                        foreach(string property in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","OverlayCpuText","OverlayGpuText","OverlayCpuTemperatureText","OverlayGpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail","GpuName","MemoryText"}) RaisePropertyChanged(property);
-                        RaiseSensorStatus();
+                        RefreshReadings();
                     }
                     finally { Interlocked.Exchange(ref _pending,0); }
                 }),DispatcherPriority.Background);
@@ -278,6 +320,47 @@ namespace WinMemoryCleaner
             catch(InvalidOperationException) { Interlocked.Exchange(ref _pending,0); }
         }
         private void Suspend() { _session.Suspend(); }
+        private void RefreshReadings()
+        {
+            var next=new DisplayReadings
+            {
+                CpuText=Reading(_last==null?null:_last.CpuUsage,false),
+                GpuText=Reading(_last==null?null:_last.GpuUsage,false),
+                CpuTemperatureText=Reading(_last==null?null:_last.CpuTemperature,true),
+                GpuTemperatureText=Reading(_last==null?null:_last.GpuTemperature,true),
+                OverlayCpuText=OverlayReading(_last==null?null:_last.CpuUsage,false),
+                OverlayGpuText=OverlayReading(_last==null?null:_last.GpuUsage,false),
+                OverlayCpuTemperatureText=OverlayReading(_last==null?null:_last.CpuTemperature,true),
+                OverlayGpuTemperatureText=OverlayReading(_last==null?null:_last.GpuTemperature,true),
+                CpuDetail=Detail(_last==null?null:_last.CpuUsage,false),
+                GpuDetail=Detail(_last==null?null:_last.GpuUsage,false),
+                CpuTemperatureDetail=Detail(_last==null?null:_last.CpuTemperature,true),
+                GpuTemperatureDetail=Detail(_last==null?null:_last.GpuTemperature,false),
+                GpuName=_last==null?Labels["WarmingUp"]:_last.GpuName,
+                MemoryText=MemoryText
+            };
+            var old=_readings;
+            _readings=next;
+            NotifyTextChanged("CpuText",old.CpuText,next.CpuText);
+            NotifyTextChanged("GpuText",old.GpuText,next.GpuText);
+            NotifyTextChanged("CpuTemperatureText",old.CpuTemperatureText,next.CpuTemperatureText);
+            NotifyTextChanged("GpuTemperatureText",old.GpuTemperatureText,next.GpuTemperatureText);
+            NotifyTextChanged("OverlayCpuText",old.OverlayCpuText,next.OverlayCpuText);
+            NotifyTextChanged("OverlayGpuText",old.OverlayGpuText,next.OverlayGpuText);
+            NotifyTextChanged("OverlayCpuTemperatureText",old.OverlayCpuTemperatureText,next.OverlayCpuTemperatureText);
+            NotifyTextChanged("OverlayGpuTemperatureText",old.OverlayGpuTemperatureText,next.OverlayGpuTemperatureText);
+            NotifyTextChanged("CpuDetail",old.CpuDetail,next.CpuDetail);
+            NotifyTextChanged("GpuDetail",old.GpuDetail,next.GpuDetail);
+            NotifyTextChanged("CpuTemperatureDetail",old.CpuTemperatureDetail,next.CpuTemperatureDetail);
+            NotifyTextChanged("GpuTemperatureDetail",old.GpuTemperatureDetail,next.GpuTemperatureDetail);
+            NotifyTextChanged("GpuName",old.GpuName,next.GpuName);
+            NotifyTextChanged("MemoryText",old.MemoryText,next.MemoryText);
+            RaiseSensorStatus();
+        }
+        private void NotifyTextChanged(string property,string previous,string current)
+        {
+            if(!string.Equals(previous,current,StringComparison.Ordinal))RaisePropertyChanged(property);
+        }
         private static string OverlayReading(MetricValue metric,bool temperature)
         {
             return metric!=null&&metric.Status==MetricStatus.Available&&metric.Value.HasValue
@@ -305,14 +388,15 @@ namespace WinMemoryCleaner
             Labels.Refresh();
             if(Displays!=null) foreach(var display in Displays) if(string.IsNullOrEmpty(display.Id)) display.Name=Labels["PrimaryDisplay"]; // Rename in place; replacing rows would clear the saved display.
             _processes.RefreshText();
-            foreach(string name in new[]{"CpuText","GpuText","CpuTemperatureText","GpuTemperatureText","CpuDetail","GpuDetail","CpuTemperatureDetail","GpuTemperatureDetail"})RaisePropertyChanged(name);
-            RaiseSensorStatus();
+            RaisePropertyChanged("ActionStatus");
+            RefreshReadings();
         }
         public void Dispose()
         {
             if(_disposed)return;
             _disposed=true; Localizer.StaticPropertyChanged-=OnLanguageChanged;
             if(_installTimer!=null) { _installTimer.Stop();_installTimer.Tick-=OnInstallationProgress; }
+            if(_installer!=null)_installer.CancelPreparation();
             _processes.PropertyChanged-=OnProcessPresentationChanged;_processes.Dispose();
             _session.Dispose();_pump.Dispose(); _last=null;
         }

@@ -24,7 +24,7 @@ namespace WinMemoryCleaner.Sensors
     internal static class SensorProtocol
     {
         internal const int Version=1;
-        internal const string PayloadVersion="lhm-0.9.6-p1";
+        internal const string PayloadVersion="lhm-0.9.6-p3";
         internal const int MaximumFrameBytes=65536;
         private static readonly UTF8Encoding Utf8=new UTF8Encoding(false,true);
         internal static int NormalizeRefresh(int seconds) { return seconds==1||seconds==5?seconds:2; }

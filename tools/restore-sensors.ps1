@@ -1,11 +1,11 @@
-param([string]$ProjectRoot,[string]$SourceCache,[string]$OutputPath,[switch]$Offline)
+param([string]$ProjectRoot,[string]$SourceCache,[string]$OutputPath,[switch]$Offline,[switch]$IncludeInstaller)
 $ErrorActionPreference='Stop'
 if(-not $ProjectRoot){if(-not $PSScriptRoot){throw 'Run restore-sensors from its file or pass -ProjectRoot.'};$ProjectRoot=Split-Path $PSScriptRoot -Parent}
 $ProjectRoot=[IO.Path]::GetFullPath($ProjectRoot)
 if(-not $OutputPath){$OutputPath=Join-Path $ProjectRoot 'build\sensors'}
 $OutputPath=[IO.Path]::GetFullPath($OutputPath)
 $lock=[IO.File]::ReadAllText((Join-Path $ProjectRoot 'sensors\dependencies.lock.json'),[Text.Encoding]::UTF8)|ConvertFrom-Json
-if($lock.schema-ne 1-or$lock.payload-ne 'lhm-0.9.6-p1'){throw 'Unsupported sensor dependency lock.'}
+if($lock.schema-ne 1-or$lock.payload-ne 'lhm-0.9.6-p3'){throw 'Unsupported sensor dependency lock.'}
 [Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol-bor[Net.SecurityProtocolType]::Tls12
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
@@ -127,14 +127,17 @@ try{
         }
         Copy-Item -LiteralPath $source -Destination (Join-Path $stage ('inputs\'+$license.name))
     }
+    # Optional tooling input only. Normal builds do not fetch or embed the installer.
+    if($IncludeInstaller){
     $candidates=@();if($SourceCache){$candidates=@((Join-Path $SourceCache 'downloads\PawnIO_setup.exe'),(Join-Path $SourceCache 'PawnIO_setup.exe'))}
-    $installer=Ensure-Input $lock.installer.name $lock.installer $lock.installer.url $candidates -GitBlob
+    $installer=Ensure-Input $lock.installer.name $lock.installer $lock.installer.url $candidates
     $signature=Get-AuthenticodeSignature -LiteralPath $installer
     if($signature.Status-ne 'Valid'-or-not$signature.SignerCertificate-or-not[String]::Equals($signature.SignerCertificate.Thumbprint,$lock.installer.signerThumbprint,[StringComparison]::OrdinalIgnoreCase)){throw 'Official installer signature cannot be validated.'}
     $version=[Diagnostics.FileVersionInfo]::GetVersionInfo($installer)
     $actualVersion=New-Object Version($version.FileMajorPart,$version.FileMinorPart,$version.FileBuildPart,$version.FilePrivatePart)
     if(-not$actualVersion.Equals([Version]$lock.installer.version)){throw 'Official installer version mismatch.'}
     Copy-Item -LiteralPath $installer -Destination (Join-Path $stage 'inputs\PawnIO_setup.exe')
+    }
     Copy-Item -LiteralPath (Join-Path $ProjectRoot 'sensors\THIRD-PARTY-NOTICES.md') -Destination (Join-Path $stage 'inputs\THIRD-PARTY-NOTICES.md')
     foreach($name in @('lib','inputs')){
         $destination=Join-Path $OutputPath $name;Assert-CleanTree $destination

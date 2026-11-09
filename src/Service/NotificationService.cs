@@ -27,20 +27,37 @@ namespace WinMemoryCleaner
         private readonly object _disposeLock = new object();
 
         /// <summary>
-        /// Serializes icon rendering. Held by both <see cref="GetRotatedIcon" /> and
-        /// <see cref="GetMemoryUsageIcon" />, which the UI thread (rotation tick) and the
-        /// background monitor threads can reach at the same time.
+        /// Serializes GDI rendering, cached appearance and pending-icon ownership. The
+        /// UI callback takes this before <see cref="_currentIconLock" />; the reverse
+        /// order is never used. Never held while dispatching work to the UI thread.
         /// </summary>
-        /// <remarks>
-        /// Rendering used to be serialized incidentally, because <see cref="Update" /> held
-        /// <see cref="_disposeLock" /> for its whole duration. That lock had to go to break the
-        /// deadlock described on <see cref="InvokeOnUi" />, so this one restores the guarantee
-        /// explicitly. It covers both render paths on purpose: GDI+ types are not thread safe,
-        /// and a partially covered invariant invites a future change to cache a Font, Brush or
-        /// StringFormat in a field and reintroduce a data race. Never held across a dispatcher
-        /// call.
-        /// </remarks>
         private readonly object _iconRenderLock = new object();
+
+        private struct TrayIconState
+        {
+            internal bool MemoryUsage, Optimizing, Transparent;
+            internal int Percentage, BackgroundArgb, TextArgb;
+            internal string Text;
+
+            internal bool SameImage(TrayIconState other)
+            {
+                return MemoryUsage == other.MemoryUsage && Optimizing == other.Optimizing
+                    && (!MemoryUsage || (Percentage == other.Percentage && Transparent == other.Transparent
+                    && BackgroundArgb == other.BackgroundArgb && TextArgb == other.TextArgb));
+            }
+
+            internal bool SameUpdate(TrayIconState other)
+            {
+                return SameImage(other) && string.Equals(Text, other.Text, StringComparison.Ordinal);
+            }
+        }
+
+        // At most one unconsumed icon and one dispatcher callback, even while the UI is busy.
+        // No rendered icon is shared between a pending update and the displayed icon.
+        private TrayIconState _requestedState, _appliedState;
+        private bool _hasRequestedState, _hasAppliedState, _updateQueued, _replacePendingIcon;
+        private Icon _pendingIcon;
+        private long _dispatchId;
 
         /// <summary>
         /// Guards the <see cref="_currentIcon" /> swap. Normally that swap is serialized by
@@ -138,7 +155,7 @@ namespace WinMemoryCleaner
 
                 // DispatcherTimer has thread affinity: Stop() from another thread throws, which
                 // previously left the timer running and kept firing ticks during shutdown.
-                InvokeOnUi(CleanupRotationTimer);
+                InvokeOnUi(() => { lock (_iconRenderLock) CleanupRotationTimer(); });
 
                 try
                 {
@@ -155,24 +172,18 @@ namespace WinMemoryCleaner
 
                 try
                 {
-                    lock (_currentIconLock)
+                    lock (_iconRenderLock)
                     {
-                        if (_currentIcon != null && _currentIcon != _imageIcon)
+                        _updateQueued = _hasRequestedState = _hasAppliedState = false;
+                        DisposePendingIcon();
+                        lock (_currentIconLock)
                         {
-                            _currentIcon.Dispose();
+                            DisposeRenderedIcon(_currentIcon);
                             _currentIcon = null;
                         }
+                        if (_imageIcon != null)
+                            _imageIcon.Dispose();
                     }
-                }
-                catch (Exception ex)
-                {
-                    Logger.Debug(ex);
-                }
-
-                try
-                {
-                    if (_imageIcon != null)
-                        _imageIcon.Dispose();
                 }
                 catch (Exception ex)
                 {
@@ -210,24 +221,36 @@ namespace WinMemoryCleaner
         /// <param name="action">The action to run on the UI thread.</param>
         private static void InvokeOnUi(Action action)
         {
-            if (action == null)
-                return;
+            TryInvokeOnUi(action, null);
+        }
 
+        private static bool TryInvokeOnUi(Action action, EventHandler aborted)
+        {
+            if (action == null)
+                return false;
             try
             {
                 var application = WpfApplication.Current;
                 var dispatcher = application == null ? null : application.Dispatcher;
-
-                // No dispatcher means there is no UI thread to marshal to, so running inline is
-                // both correct and necessary: returning here would silently drop the update.
                 if (dispatcher == null || dispatcher.CheckAccess())
                     action();
                 else
-                    dispatcher.BeginInvoke(action);
+                {
+                    var operation = dispatcher.BeginInvoke(action);
+                    if (aborted != null)
+                    {
+                        operation.Aborted += aborted;
+                        // Also cover shutdown/abort before the handler was attached.
+                        if (operation.Status == DispatcherOperationStatus.Aborted)
+                            aborted(operation, EventArgs.Empty);
+                    }
+                }
+                return true;
             }
             catch (Exception ex)
             {
                 Logger.Debug(ex);
+                return false;
             }
         }
 
@@ -254,90 +277,47 @@ namespace WinMemoryCleaner
         }
 
         /// <summary>
-        /// Gets the background brush color based on memory usage and optimization state
+        /// Gets the effective background color without allocating a GDI brush.
         /// </summary>
-        /// <param name="memory">The memory information</param>
-        /// <param name="isOptimizing">if set to <c>true</c> the system is optimizing</param>
-        /// <returns>A solid brush with the appropriate background color</returns>
-        private Brush GetBackgroundBrush(Memory memory, bool isOptimizing)
+        /// <param name="percentage">Physical memory usage.</param>
+        /// <param name="isOptimizing">Whether optimization is active.</param>
+        /// <param name="transparent">Whether the background is transparent.</param>
+        /// <returns>The background color.</returns>
+        private static Color GetBackgroundColor(int percentage, bool isOptimizing, bool transparent)
         {
             try
             {
-                if (Settings.TrayIconUseTransparentBackground)
-                    return new SolidBrush(Color.Transparent);
-
-                if (isOptimizing)
-                {
-                    var solidBrush = Settings.TrayIconOptimizingColor as SolidBrush;
-                    return new SolidBrush(solidBrush.Color);
-                }
-
-                if (memory.Physical.Used.Percentage >= Settings.TrayIconDangerLevel)
-                {
-                    var solidBrush = Settings.TrayIconDangerColor as SolidBrush;
-                    return new SolidBrush(solidBrush.Color);
-                }
-
-                if (memory.Physical.Used.Percentage >= Settings.TrayIconWarningLevel)
-                {
-                    var solidBrush = Settings.TrayIconWarningColor as SolidBrush;
-                    return new SolidBrush(solidBrush.Color);
-                }
-
-                var backgroundBrush = Settings.TrayIconBackgroundColor as SolidBrush;
-                return new SolidBrush(backgroundBrush.Color);
+                if (transparent)
+                    return Color.Transparent;
+                var brush = isOptimizing ? Settings.TrayIconOptimizingColor
+                    : percentage >= Settings.TrayIconDangerLevel ? Settings.TrayIconDangerColor
+                    : percentage >= Settings.TrayIconWarningLevel ? Settings.TrayIconWarningColor
+                    : Settings.TrayIconBackgroundColor;
+                return ((SolidBrush)brush).Color;
             }
             catch (Exception)
             {
-                return new SolidBrush(Color.Black);
+                return Color.Black;
             }
         }
 
-        /// <summary>
-        /// Gets the appropriate tray icon based on settings and current state
-        /// </summary>
-        /// <param name="memory">The memory information</param>
-        /// <param name="isOptimizing">if set to <c>true</c> the system is optimizing</param>
-        /// <returns>The tray icon to display</returns>
-        private Icon GetIcon(Memory memory, bool isOptimizing)
+        private TrayIconState CaptureIconState(Memory memory, bool isOptimizing, bool memoryUsage)
         {
-            try
+            var state = new TrayIconState
             {
-                return Settings.TrayIconShowMemoryUsage ? GetMemoryUsageIcon(memory, isOptimizing) : GetImageIcon(isOptimizing);
-            }
-            catch
+                MemoryUsage = memoryUsage,
+                Optimizing = isOptimizing,
+                Text = GetText(memory, isOptimizing)
+            };
+            if (memoryUsage)
             {
-                return _imageIcon;
+                int percentage = memory.Physical.Used.Percentage;
+                state.Percentage = percentage == 100 ? 99 : percentage;
+                state.Transparent = Settings.TrayIconUseTransparentBackground;
+                state.BackgroundArgb = GetBackgroundColor(percentage, isOptimizing, state.Transparent).ToArgb();
+                state.TextArgb = GetTextColor(percentage, isOptimizing, state.Transparent).ToArgb();
             }
-        }
-
-        /// <summary>
-        /// Gets the static application icon with optional rotation animation during optimization
-        /// </summary>
-        /// <param name="isOptimizing">if set to <c>true</c> the system is optimizing</param>
-        /// <returns>The application icon, optionally rotated</returns>
-        private Icon GetImageIcon(bool isOptimizing)
-        {
-            try
-            {
-                if (isOptimizing)
-                {
-                    StartRotationAnimation();
-
-                    if (_currentRotationAngle > 0)
-                        return GetRotatedIcon(_imageIcon, _currentRotationAngle);
-                }
-                else
-                {
-                    StopRotationAnimation();
-                }
-
-                return _imageIcon;
-            }
-            catch
-            {
-                return _imageIcon;
-            }
+            return state;
         }
 
         /// <summary>
@@ -348,6 +328,11 @@ namespace WinMemoryCleaner
         /// <returns>An icon with rendered memory percentage text</returns>
         private Icon GetMemoryUsageIcon(Memory memory, bool isOptimizing)
         {
+            return RenderMemoryUsageIcon(CaptureIconState(memory, isOptimizing, true));
+        }
+
+        private Icon RenderMemoryUsageIcon(TrayIconState state)
+        {
             try
             {
                 lock (_iconRenderLock)
@@ -356,8 +341,8 @@ namespace WinMemoryCleaner
                     using (var graphics = Graphics.FromImage(image))
                     using (var font = new Font("Consolas", 14F, FontStyle.Regular, GraphicsUnit.Pixel))
                     using (var format = new StringFormat())
-                    using (var backgroundBrush = GetBackgroundBrush(memory, isOptimizing))
-                    using (var textBrush = GetTextBrush(memory, isOptimizing))
+                    using (var backgroundBrush = new SolidBrush(Color.FromArgb(state.BackgroundArgb)))
+                    using (var textBrush = new SolidBrush(Color.FromArgb(state.TextArgb)))
                     {
                         // Configure format
                         format.Alignment = StringAlignment.Center;
@@ -370,7 +355,7 @@ namespace WinMemoryCleaner
                         graphics.TextRenderingHint = TextRenderingHint.SingleBitPerPixelGridFit;
 
                         // Draw background
-                        if (!Settings.TrayIconUseTransparentBackground)
+                        if (!state.Transparent)
                         {
                             using (var path = new GraphicsPath())
                             {
@@ -385,7 +370,7 @@ namespace WinMemoryCleaner
                         }
 
                         // Draw text
-                        graphics.DrawString(string.Format(CultureInfo.InvariantCulture, "{0:00}", memory.Physical.Used.Percentage == 100 ? 99 : memory.Physical.Used.Percentage), font, textBrush, 8F, 9F, format);
+                        graphics.DrawString(state.Percentage.ToString("00", CultureInfo.InvariantCulture), font, textBrush, 8F, 9F, format);
 
                         var handle = image.GetHicon();
 
@@ -495,45 +480,26 @@ namespace WinMemoryCleaner
         }
 
         /// <summary>
-        /// Gets the text brush color based on memory usage and optimization state
+        /// Gets the effective text color without allocating a GDI brush.
         /// </summary>
-        /// <param name="memory">The memory information</param>
-        /// <param name="isOptimizing">if set to <c>true</c> the system is optimizing</param>
-        /// <returns>A solid brush with the appropriate text color</returns>
-        private Brush GetTextBrush(Memory memory, bool isOptimizing)
+        /// <param name="percentage">Physical memory usage.</param>
+        /// <param name="isOptimizing">Whether optimization is active.</param>
+        /// <param name="transparent">Whether the background is transparent.</param>
+        /// <returns>The text color.</returns>
+        private static Color GetTextColor(int percentage, bool isOptimizing, bool transparent)
         {
             try
             {
-                if (!Settings.TrayIconUseTransparentBackground)
-                {
-                    var solidBrush = Settings.TrayIconTextColor as SolidBrush;
-                    return new SolidBrush(solidBrush.Color);
-                }
-
-                if (isOptimizing)
-                {
-                    var solidBrush = Settings.TrayIconOptimizingColor as SolidBrush;
-                    return new SolidBrush(solidBrush.Color);
-                }
-
-                if (memory.Physical.Used.Percentage >= Settings.TrayIconDangerLevel)
-                {
-                    var solidBrush = Settings.TrayIconDangerColor as SolidBrush;
-                    return new SolidBrush(solidBrush.Color);
-                }
-
-                if (memory.Physical.Used.Percentage >= Settings.TrayIconWarningLevel)
-                {
-                    var solidBrush = Settings.TrayIconWarningColor as SolidBrush;
-                    return new SolidBrush(solidBrush.Color);
-                }
-
-                var textBrush = Settings.TrayIconTextColor as SolidBrush;
-                return new SolidBrush(textBrush.Color);
+                var brush = !transparent ? Settings.TrayIconTextColor
+                    : isOptimizing ? Settings.TrayIconOptimizingColor
+                    : percentage >= Settings.TrayIconDangerLevel ? Settings.TrayIconDangerColor
+                    : percentage >= Settings.TrayIconWarningLevel ? Settings.TrayIconWarningColor
+                    : Settings.TrayIconTextColor;
+                return ((SolidBrush)brush).Color;
             }
             catch (Exception)
             {
-                return new SolidBrush(Color.White);
+                return Color.White;
             }
         }
 
@@ -611,9 +577,13 @@ namespace WinMemoryCleaner
 
             try
             {
-                _currentRotationAngle = (_currentRotationAngle + 90) % 360;
-
-                ApplyIcon(_notifyIcon.Text, GetRotatedIcon(_imageIcon, _currentRotationAngle));
+                lock (_iconRenderLock)
+                {
+                    if (_disposed || _rotationTimer == null)
+                        return;
+                    _currentRotationAngle = (_currentRotationAngle + 90) % 360;
+                    ApplyIcon(_notifyIcon.Text, GetRotatedIcon(_imageIcon, _currentRotationAngle));
+                }
             }
             catch (ObjectDisposedException)
             {
@@ -630,38 +600,22 @@ namespace WinMemoryCleaner
         /// </summary>
         private void StartRotationAnimation()
         {
-            InvokeOnUi(() =>
+            // Called only by the UI callback (or inline when no Application exists).
+            try
             {
-                try
-                {
-                    // Checked on the UI thread so two concurrent starts cannot both create a timer
-                    if (_rotationTimer != null || _disposed)
-                        return;
-
-                    _currentRotationAngle = 0;
-
-                    _rotationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-                    _rotationTimer.Tick += OnRotationTimerTick;
-                    _rotationTimer.Start();
-                }
-                catch (Exception ex)
-                {
-                    Logger.Debug(ex);
-                }
-            });
+                if (_rotationTimer != null || _disposed)
+                    return;
+                _currentRotationAngle = 0;
+                _rotationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+                _rotationTimer.Tick += OnRotationTimerTick;
+                _rotationTimer.Start();
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug(ex);
+            }
         }
 
-        /// <summary>
-        /// Stops the icon rotation animation
-        /// </summary>
-        private void StopRotationAnimation()
-        {
-            // No _rotationTimer check here on purpose. The field is owned by the UI thread and
-            // is not volatile, so a caller on another thread can read a stale null and skip the
-            // cleanup, leaving the animation running. CleanupRotationTimer does the null check
-            // on the UI thread, where the read is valid.
-            InvokeOnUi(CleanupRotationTimer);
-        }
 
         /// <summary>
         /// Updates the tray icon and tooltip text based on current memory usage and optimization state
@@ -677,15 +631,32 @@ namespace WinMemoryCleaner
             if (_disposed || _notifyIcon == null)
                 return;
 
-            string text;
-            Icon newIcon;
-
-            // Rendering happens on the calling thread, outside any lock, so a slow GDI draw
-            // never stalls the UI thread and never blocks a lock the UI thread needs.
+            long dispatchId = 0;
             try
             {
-                text = GetText(memory, isOptimizing);
-                newIcon = GetIcon(memory, isOptimizing);
+                lock (_iconRenderLock)
+                {
+                    if (_disposed)
+                        return;
+                    var state = CaptureIconState(memory, isOptimizing, Settings.TrayIconShowMemoryUsage);
+                    if (_hasRequestedState && _requestedState.SameUpdate(state))
+                        return;
+
+                    // A tooltip-only change can keep the displayed icon. An unconsumed
+                    // update is superseded, not shared: its owned native icon is released.
+                    bool replace = !_hasAppliedState || !_appliedState.SameImage(state);
+                    var newIcon = !replace ? null : state.MemoryUsage ? RenderMemoryUsageIcon(state) : _imageIcon;
+                    DisposePendingIcon();
+                    _pendingIcon = newIcon;
+                    _replacePendingIcon = replace;
+                    _requestedState = state;
+                    _hasRequestedState = !state.MemoryUsage || !replace || (newIcon != null && newIcon != _imageIcon);
+                    if (!_updateQueued)
+                    {
+                        _updateQueued = true;
+                        dispatchId = ++_dispatchId;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -693,9 +664,66 @@ namespace WinMemoryCleaner
                 return;
             }
 
-            // NotifyIcon has thread affinity: its window was created on the UI thread, so
-            // assigning Text/Icon from a pool thread can hang on the shell notification call.
-            InvokeOnUi(() => ApplyIcon(text, newIcon));
+            // Rendering stays on the caller. Never wait for the UI or hold the render lock
+            // across dispatch. A generation guard makes duplicate abort callbacks harmless.
+            if (dispatchId != 0 && !TryInvokeOnUi(() => ApplyPendingUpdate(dispatchId),
+                (sender, args) => CancelPendingUpdate(dispatchId)))
+                CancelPendingUpdate(dispatchId);
+        }
+
+        private void ApplyPendingUpdate(long dispatchId)
+        {
+            lock (_iconRenderLock)
+            {
+                if (!_updateQueued || dispatchId != _dispatchId)
+                    return;
+                var state = _requestedState;
+                var icon = _pendingIcon;
+                bool replace = _replacePendingIcon;
+                _pendingIcon = null;
+                _updateQueued = false;
+                if (_disposed)
+                {
+                    DisposeRenderedIcon(icon);
+                    return;
+                }
+
+                if (!state.MemoryUsage && state.Optimizing)
+                    StartRotationAnimation();
+                else
+                    CleanupRotationTimer();
+                bool applied = ApplyIcon(state.Text, icon, replace);
+                _hasAppliedState = applied && (!state.MemoryUsage || !replace || (icon != null && icon != _imageIcon));
+                _hasRequestedState = _hasAppliedState;
+                if (_hasAppliedState)
+                    _appliedState = state;
+            }
+        }
+
+        private void CancelPendingUpdate(long dispatchId)
+        {
+            lock (_iconRenderLock)
+            {
+                if (!_updateQueued || dispatchId != _dispatchId)
+                    return;
+                _updateQueued = _hasRequestedState = false;
+                DisposePendingIcon();
+            }
+        }
+
+        private void DisposePendingIcon()
+        {
+            var icon = _pendingIcon;
+            _pendingIcon = null;
+            DisposeRenderedIcon(icon);
+        }
+
+        private void DisposeRenderedIcon(Icon icon)
+        {
+            if (icon == null || icon == _imageIcon)
+                return;
+            try { icon.Dispose(); }
+            catch (Exception ex) { Logger.Debug(ex); }
         }
 
         /// <summary>
@@ -708,49 +736,47 @@ namespace WinMemoryCleaner
         /// </remarks>
         /// <param name="text">The tooltip text.</param>
         /// <param name="newIcon">The icon to display.</param>
-        private void ApplyIcon(string text, Icon newIcon)
+        /// <param name="replaceIcon">Whether the image, rather than just the tooltip, changed.</param>
+        /// <returns>Whether the requested update was applied.</returns>
+        private bool ApplyIcon(string text, Icon newIcon, bool replaceIcon = true)
         {
+            Icon oldIcon = null;
+            bool adopted = false;
             try
             {
-                if (_disposed || _notifyIcon == null)
-                {
-                    if (newIcon != null && newIcon != _imageIcon)
-                        newIcon.Dispose();
-
-                    return;
-                }
-
-                Icon oldIcon;
-
                 lock (_currentIconLock)
                 {
-                    oldIcon = _currentIcon;
-
-                    _notifyIcon.Text = text;
-                    _notifyIcon.Icon = newIcon;
-                    _currentIcon = newIcon;
-                }
-
-                if (oldIcon != null && oldIcon != _imageIcon && oldIcon != newIcon)
-                {
-                    try
+                    if (_disposed || _notifyIcon == null)
+                        return false;
+                    if (_notifyIcon.Text != text)
+                        _notifyIcon.Text = text;
+                    if (replaceIcon)
                     {
-                        oldIcon.Dispose();
-                    }
-                    catch
-                    {
-                        // ignored
+                        oldIcon = _currentIcon;
+                        if (_notifyIcon.Icon != newIcon)
+                            _notifyIcon.Icon = newIcon;
+                        _currentIcon = newIcon;
+                        adopted = true;
                     }
                 }
+                return true;
             }
             catch (ObjectDisposedException)
             {
-                // Already disposed, ignore
+                // Already disposed, ignore.
             }
             catch (Exception ex)
             {
                 Logger.Debug(ex);
             }
+            finally
+            {
+                if (replaceIcon && !adopted)
+                    DisposeRenderedIcon(newIcon);
+                if (adopted && oldIcon != newIcon)
+                    DisposeRenderedIcon(oldIcon);
+            }
+            return false;
         }
 
         #endregion

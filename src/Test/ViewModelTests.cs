@@ -220,14 +220,14 @@ namespace WinMemoryCleaner.Test
             }
 
             [Test]
-            public void AutoUpdate_SetValue_UpdatesSettings()
+            public void AutoUpdate_TestBuildCannotEnableNetworkUpdates()
             {
-                var initialValue = _viewModel.AutoUpdate;
-                var newValue = !initialValue;
-
-                _viewModel.AutoUpdate = newValue;
-
-                Assert.AreEqual(newValue, _viewModel.AutoUpdate);
+                Assert.IsTrue(App.IsTestBuild);
+                _viewModel.AutoUpdate = true;
+                Assert.IsFalse(_viewModel.AutoUpdate);
+                Assert.IsFalse(Settings.AutoUpdate);
+                _viewModel.AutoUpdate = false;
+                Assert.IsFalse(_viewModel.AutoUpdate);
             }
 
             [Test]
@@ -479,7 +479,7 @@ namespace WinMemoryCleaner.Test
 
                 Assert.IsNotNull(title);
                 Assert.IsNotEmpty(title);
-                StringAssert.Contains("Windows Memory Cleaner", title);
+                StringAssert.Contains("WinMemoryCleaner Community", title);
             }
 
             [Test]
