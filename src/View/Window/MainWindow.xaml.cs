@@ -45,14 +45,17 @@ namespace WinMemoryCleaner
         internal MainWindow(Func<IResourceMonitor> createMonitor,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction)
             : this(createMonitor,executeAction,SensorDriverTrust.Inspect,null) { }
         internal MainWindow(Func<IResourceMonitor> createMonitor,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction,Func<SensorDriverState> inspectDriver,Func<bool,string,bool> beginDriver)
+            : this(createMonitor,executeAction,inspectDriver,beginDriver,delegate { return new FrameRateMonitor(); }) { }
+        internal MainWindow(Func<IResourceMonitor> createMonitor,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction,Func<SensorDriverState> inspectDriver,Func<bool,string,bool> beginDriver,Func<IFrameRateMonitor> createFps)
         {
             if(executeAction==null)throw new ArgumentNullException("executeAction");
             if(inspectDriver==null)throw new ArgumentNullException("inspectDriver");
+            if(createFps==null)throw new ArgumentNullException("createFps");
             _inspectTemperatureDriver=inspectDriver;
             _executeAction=executeAction;
             var locator = (ViewModelLocator)FindResource("ViewModelLocator");
             _viewModel = locator.MainViewModel;
-            Monitoring = new MonitoringViewModel(_viewModel, Dispatcher, createMonitor);
+            Monitoring = new MonitoringViewModel(_viewModel, Dispatcher, createMonitor, createFps);
             _beginDriverInstallation=beginDriver??delegate(bool confirmed,string path) { return Monitoring.BeginDriverInstallation(confirmed,path); };
             InitializeComponent();
             Loaded += OnMainWindowLoaded;
@@ -115,6 +118,19 @@ namespace WinMemoryCleaner
             if(e.Key!=Key.Escape)return;
             OnClearProcessSearch(sender,e);e.Handled=true;
         }
+        private void OnChooseFpsTarget(object sender,RoutedEventArgs e)
+        {
+            if(_closed||_disposed)return;
+            Monitoring.FpsTargetMode=1;SelectPage(1);SetFocusTo(ProcessSearch);
+        }
+        private void OnTrackSelectedFps(object sender,RoutedEventArgs e)
+        {
+            if(_closed||_disposed)return;
+            if(!Monitoring.UseSelectedFpsTarget()) { Monitoring.SetActionStatus("ProcessTargetUnavailable");return; }
+            Monitoring.SetActionStatus(Monitoring.ShowFps?"FpsTargetSelected":"FpsTargetSelectedOff",Monitoring.FpsTargetText+" — ");
+        }
+        private void OnClearFpsTarget(object sender,RoutedEventArgs e)
+        { if(!_closed&&!_disposed)Monitoring.ClearFpsTarget(); }
         private bool CanShowTemperatureDriverNotice(CheckBox trigger)
         {
             return !_closed&&!_disposed&&IsVisible&&WindowState!=WindowState.Minimized&&_page==2

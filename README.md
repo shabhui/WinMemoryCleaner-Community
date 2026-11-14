@@ -33,9 +33,9 @@ SHA-256 可检查下载完整性，**不是数字签名，也不能抵御发布�
 
 | 入口 | 用途 |
 |---|---|
-| **概览** | 查看物理内存、CPU/GPU 使用率与温度来源，按需执行原有内存清理 |
-| **进程** | 按名称或 PID 搜索，按工作集、私有内存、CPU、GPU、专用显存排序；同名进程保留独立行 |
-| **设置** | 调整 1 / 2 / 5 秒刷新（默认 2 秒）、悬浮显示、温度选项，以及原有清理、托盘、快捷键、主题和语言设置 |
+| **概览** | 查看物理内存；CPU/GPU 使用率与温度并排，长说明收进默认折叠的“详情”；可选游戏 FPS，保留原有内存清理 |
+| **进程** | 按名称或 PID 搜索、排序，同名进程保留独立行；可显式选为本次运行的 FPS 目标 |
+| **设置** | 调整 1 / 2 / 5 秒刷新（默认 2 秒）、悬浮显示、温度与 FPS 目标模式，以及原有清理、托盘、快捷键、主题和语言设置 |
 | **托盘** | 查看内存占用、重新打开窗口、清理或退出 |
 | **悬浮监控** | 默认关闭；可横向/竖向、拖动定位、保存位置，默认鼠标穿透且不抢焦点；“仅显示监控条”会隐藏主窗口，托盘仍可打开设置 |
 
@@ -49,6 +49,15 @@ SHA-256 可检查下载完整性，**不是数字签名，也不能抵御发布�
 - 优先复用已有 ASUS CPU / NVIDIA NVAPI 来源和已运行的默认名 LHM/OHM WMI 提供者；缺少指标时才使用内嵌 LibreHardwareMonitor **0.9.6** 独立后端。轻量来源覆盖全部温度时无需保持后端运行。
 - 独立后端按需校验并释放至 `%LOCALAPPDATA%\WinMemoryCleaner.Community\Sensors`，最多一个自有后端进程；会增加磁盘缓存和进程内存开销，不需要在 EXE 旁手工放 DLL。
 - 不保证所有 CPU/GPU、虚拟机、驱动或安全策略均能提供温度；悬浮层也不保证覆盖独占全屏、受保护桌面或反作弊环境。没有游戏注入或绕过保护功能。
+
+#### 可选游戏 FPS：开关与目标
+
+- **默认关闭。** 在概览勾选 `FPS`，或在设置的显示项中开启“游戏 FPS（提交）”。同一个显示项控制概览和监控条；监控条本身仍独立开关，不会因开启 FPS 自动弹出。
+- **自动跟随前台**：只查询当前前台窗口所属进程，排除本工具，不为发现前台枚举全进程。也可选择**手动选择进程**：在进程页选中游戏并点“选为 FPS 目标”。只高亮行不会切目标；选择目标也不会自动开启 FPS。
+- 手动目标按 PID 和创建时刻校验，只在本次运行中保留。游戏退出、PID 被复用或身份无法验证时停止提供读数；游戏或工具重启后需要重新选择，不跨重启保存 PID。
+- 统计的是经验证格式的 **DirectX DXGI / D3D9 成功 Present 提交速率**，不是显示器 Hz、界面刷新率、上屏帧率或补帧结果。无有效事件、权限不足、接口不支持、事件丢失等均显示 `—` 和实际状态，不伪造 0/60 FPS。
+- 采集使用自有、按目标进程及事件过滤的 Windows ETW 会话，不注入、不 hook 游戏、不安装组件或驱动。FPS 关闭或没有可见概览/监控条需求时不启动采集；进程页、设置页、紧凑模式及隐藏/最小化主窗口在没有 FPS 监控条需求时暂停，切目标立即作废旧读数。
+- **验证边界**：当前新增 FPS 的原生 ETW 边界与真实游戏尚未实测；不保证 OpenGL/Vulkan、独占全屏或反作弊应用。确定性测试不能替代游戏兼容性、开销及准确性验收，原发布性能门禁仍未放行。
 
 #### 可选温度驱动：先确认，再准备
 
@@ -123,9 +132,9 @@ Automatic updates are off by default. When enabled, they use this repository's `
 
 | Entry point | Purpose |
 |---|---|
-| **Overview** | Physical memory, CPU/GPU usage and temperature sources, with the existing memory-cleaning operations available on demand |
-| **Processes** | Search by name or PID; sort by working set, private memory, CPU, GPU or dedicated GPU memory; keep same-name processes in separate rows |
-| **Settings** | Select a 1 / 2 / 5-second refresh interval (2 seconds by default), overlay and temperature options, plus existing cleaning, tray, hotkey, theme and language settings |
+| **Overview** | Physical memory; CPU/GPU usage alongside temperatures, with long explanations in collapsed Details; optional game FPS and the existing memory-cleaning operations |
+| **Processes** | Search and sort by name/PID or usage, keep same-name processes separate, and explicitly select an FPS target for this run |
+| **Settings** | Select a 1 / 2 / 5-second refresh interval (2 seconds by default), overlay, temperature and FPS target modes, plus existing cleaning, tray, hotkey, theme and language settings |
 | **Tray** | View memory usage, reopen the window, clean memory or exit |
 | **Monitoring overlay** | Off by default; horizontal or vertical, draggable with saved positioning, click-through and non-focus-stealing by default; monitor-only mode hides the main window while settings remain accessible from the tray |
 
@@ -139,6 +148,15 @@ Automatic updates are off by default. When enabled, they use this repository's `
 - Existing ASUS CPU / NVIDIA NVAPI sources and already-running LHM/OHM WMI providers under their default process names are reused first. The embedded LibreHardwareMonitor **0.9.6** backend is used for missing metrics. If lightweight sources cover all requested temperatures, the backend need not remain running.
 - The independent backend is verified and extracted on demand to `%LOCALAPPDATA%\WinMemoryCleaner.Community\Sensors`, with at most one owned backend process. It adds disk-cache and process-memory overhead; no manual placement of DLLs beside the EXE is needed.
 - Temperature support is not guaranteed for every CPU/GPU, VM, driver or security policy. The overlay is not guaranteed over exclusive fullscreen applications, protected desktops or anti-cheat environments. There is no game injection or protection-bypass feature.
+
+#### Optional game FPS: display and target selection
+
+- **Off by default.** Enable `FPS` on Overview or “Game FPS (presents)” in Settings. One display item controls Overview and the monitoring overlay; the overlay keeps its separate on/off switch and is not opened automatically by enabling FPS.
+- **Follow foreground** queries only the process owning the current foreground window, excludes this tool, and does not enumerate all processes to find it. Alternatively use **Selected process**: highlight the game on Processes and click “Use as FPS target”. Highlighting alone does not retarget capture; choosing a target does not enable FPS.
+- Manual targets are verified by PID and creation time and retained only for the current run. Exited processes, reused PIDs and unverifiable identities cannot provide a reading. Select again after restarting the game or tool; manual PIDs are not persisted across restarts.
+- The metric is the **successful DirectX DXGI / D3D9 Present submission rate** for verified event formats, not display Hz, UI refresh rate, displayed FPS or generated frames. No valid events, insufficient permissions, unsupported APIs or event loss produce `—` and the actual state, never invented 0/60 FPS.
+- Collection uses an owned Windows ETW session filtered by target process and event, without game injection/hooks, component installation or new drivers. With FPS off or no visible Overview/overlay demand, capture does not start. Processes, Settings, compact mode and a hidden/minimized main window pause FPS when no FPS overlay needs it; changing targets invalidates the old reading immediately.
+- **Verification boundary:** native ETW boundaries and real games have not yet been exercised for this new feature. OpenGL/Vulkan, exclusive fullscreen and anti-cheat applications are not guaranteed. Deterministic tests do not establish game compatibility, overhead or accuracy; the existing release performance gates remain unpassed.
 
 #### Optional temperature driver: confirm before preparation
 

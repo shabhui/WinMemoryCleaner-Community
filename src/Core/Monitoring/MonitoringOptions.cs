@@ -8,6 +8,8 @@ namespace WinMemoryCleaner
     public sealed class MonitoringOptions
     {
         public int RefreshSeconds { get; set; }
+        // Foreground=0, explicitly selected process=1. Never persist a process PID here.
+        public int FpsTargetMode { get; set; }
         public bool OverlayEnabled { get; set; }
         public bool ClickThrough { get; set; }
         // Horizontal=0, vertical=1. Older settings safely keep the horizontal default.
@@ -16,7 +18,7 @@ namespace WinMemoryCleaner
         public int Corner { get; set; }
         public double X { get; set; }
         public double Y { get; set; }
-        // CPU=1, GPU=2, memory=4, CPU temperature=8, GPU temperature=16.
+        // CPU=1, GPU=2, memory=4, CPU temperature=8, GPU temperature=16, FPS=32 (opt-in).
         public int Items { get; set; }
 
         public MonitoringOptions()
@@ -31,7 +33,8 @@ namespace WinMemoryCleaner
             RefreshSeconds = MonitoringPolicy.NormalizeRefresh(RefreshSeconds);
             Corner = Corner >= 0 && Corner <= 4 ? Corner : 0;
             Layout = Layout == 1 ? 1 : 0;
-            Items &= 31;
+            Items &= 63;
+            FpsTargetMode = FpsTargetMode == 1 ? 1 : 0;
             if (Items == 0) Items = 4;
             Screen = Screen ?? string.Empty;
             if (double.IsNaN(X) || double.IsInfinity(X)) X = 16;

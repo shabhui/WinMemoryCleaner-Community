@@ -41,6 +41,12 @@
                     <TextBlock Text="{Binding MemoryText}" Style="{StaticResource OverlayNumber}"/>
                 </StackPanel>
             </Border>
+            <Border Style="{StaticResource OverlayGroup}" Visibility="{Binding ShowFps, Converter={StaticResource BooleanToVisibilityConverter}}" ToolTip="{Binding FpsDetail}">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="{Binding Labels[FpsShort]}" Style="{StaticResource OverlayLabel}"/>
+                    <TextBlock x:Name="OverlayFpsValue" Text="{Binding OverlayFpsText}" Style="{StaticResource OverlayNumber}"/>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </StackPanel>
 </Window>

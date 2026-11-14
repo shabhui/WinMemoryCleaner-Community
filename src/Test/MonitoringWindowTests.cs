@@ -35,11 +35,13 @@ namespace WinMemoryCleaner.Test
         private bool _disposed;
 
         private ProcessMonitor _processMonitor;
+        private FpsMonitor _fpsMonitor;
+        private int _fpsCreations;
         private StringWriter _bindingOutput;
         private TextWriterTraceListener _bindingListener;
         private SourceLevels _oldBindingLevel;
 
-        private MainWindow CreateWindow(bool overlayEnabled = false,Func<IResourceMonitor> createMonitor=null,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction=null,Func<SensorDriverState> inspectDriver=null,Func<bool,string,bool> beginDriver=null)
+        private MainWindow CreateWindow(bool overlayEnabled = false,Func<IResourceMonitor> createMonitor=null,Func<ProcessSnapshot,bool,bool,ProcessActionResult> executeAction=null,Func<SensorDriverState> inspectDriver=null,Func<bool,string,bool> beginDriver=null,Func<IFrameRateMonitor> createFps=null)
         {
             Assert.IsNotNull(typeof(MainWindow).GetProperty("Monitoring"), "The real shell must expose its independent monitoring model.");
             Assert.IsNotNull(typeof(MainWindow).GetMethod("SelectPage"), "Navigation must select the real overview/process/settings pages.");
@@ -82,7 +84,9 @@ namespace WinMemoryCleaner.Test
             if(executeAction==null)executeAction=delegate { return new ProcessActionResult(ProcessActionOutcome.Failed,"Controlled window test: no native process action."); };
             if(inspectDriver==null)inspectDriver=delegate { return new SensorDriverState(true,true,new Version(2,2,0),"Ready"); };
             if(beginDriver==null)beginDriver=delegate(bool confirmed,string path) { Assert.IsFalse(confirmed,"This test must not request installation; the native installer is never used.");return false; };
-            _window=new MainWindow(createMonitor,executeAction,inspectDriver,beginDriver);
+            _fpsMonitor=new FpsMonitor();_fpsCreations=0;
+            if(createFps==null)createFps=delegate { _fpsCreations++;return _fpsMonitor; };
+            _window=new MainWindow(createMonitor,executeAction,inspectDriver,beginDriver,createFps);
             return _window;
         }
 
@@ -99,13 +103,37 @@ namespace WinMemoryCleaner.Test
         }
         private static void Set(object instance, string property, object value) { instance.GetType().GetProperty(property).SetValue(instance, value, null); }
 
+        private sealed class FpsMonitor : IFrameRateMonitor
+        {
+            internal bool Active;
+            internal int Samples,Disposals;
+            private bool _follow=true;
+            private ProcessSnapshot _target;
+            public void SetActive(bool active) { Active=active; }
+            public void SetTarget(bool followForeground,ProcessSnapshot target) { _follow=followForeground;_target=target; }
+            public FrameRateReading Sample()
+            {
+                Interlocked.Increment(ref Samples);
+                string state=!Active?"FpsDisabled":!_follow&&_target==null?"FpsChooseTarget":"FpsNoFrames";
+                return new FrameRateReading(MetricValue.Missing(MetricStatus.WarmingUp,"Controlled window FPS: no native capture"),_target==null?string.Empty:_target.Name,state);
+            }
+            public void Dispose() { Active=false;Disposals++; }
+        }
+        private void DisposeFpsDouble()
+        {
+            if(_fpsMonitor==null)return;
+            if(_fpsCreations==0)_fpsMonitor.Dispose();else Assert.AreEqual(1,_fpsMonitor.Disposals,"The window's owned FPS collector is disposed once.");
+            _fpsMonitor=null;
+        }
         private sealed class ProcessMonitor : IResourceMonitor
         {
             internal volatile string Mode="ready";
             internal int Samples,Disposals;
+            internal volatile Action BeforeSample;
             public ResourceSnapshot Sample(bool processes,bool temperatures)
             {
                 Interlocked.Increment(ref Samples);
+                var beforeSample=BeforeSample;if(beforeSample!=null)beforeSample();
                 if(Mode=="null")return null;
                 return processes&&Mode!="empty"?ProcessSnapshotForWindow():new ResourceSnapshot();
             }
@@ -210,6 +238,7 @@ namespace WinMemoryCleaner.Test
                 if (_window != null) _window.Close();
                 if (_locator != null) _locator.Dispose();
                 if (_notifications != null) _notifications.Dispose();
+                DisposeFpsDouble();
                 if (_oldResources != null) Application.Current.Resources = _oldResources;
                 RestoreContainer("_container", _oldRegistrations);
                 RestoreContainer("_singleton", _oldSingletons);
@@ -239,6 +268,7 @@ namespace WinMemoryCleaner.Test
                 if (_window != null) _window.Dispose();
                 if (_locator != null) _locator.Dispose();
                 if (_notifications != null) _notifications.Dispose();
+                DisposeFpsDouble();
                 if(_processMonitor!=null)
                 {
                     if(_processMonitor.Samples==0)_processMonitor.Dispose();
@@ -584,11 +614,29 @@ namespace WinMemoryCleaner.Test
             Assert.IsNotNull(status);Assert.IsNotNull(empty);
             Assert.IsTrue(Until(delegate { return window.Monitoring.ProcessStatusText==window.Monitoring.Labels["ProcessFailed"]; }));
             Assert.AreEqual("—",window.Monitoring.ProcessCountText);Assert.AreEqual(window.Monitoring.Labels["ProcessFailed"],empty.Text);
-            window.Hide();window.Monitoring.SetViewState(true,true);Drain();
-            Assert.AreEqual(window.Monitoring.Labels["ProcessLoading"],status.Text);Assert.AreEqual("—",window.Monitoring.ProcessCountText);
-            ApplyProcesses(window,new ResourceSnapshot());Drain();
-            Assert.AreEqual(window.Monitoring.Labels["ProcessEmpty"],status.Text);Assert.AreEqual(window.Monitoring.Labels["ProcessEmpty"],empty.Text);
-            Assert.AreEqual(string.Format(Localizer.Culture,window.Monitoring.Labels["ProcessMatches"],0,0),window.Monitoring.ProcessCountText);
+            using(var sampling=new ManualResetEvent(false))
+            using(var release=new ManualResetEvent(false))
+            {
+                _processMonitor.BeforeSample=delegate
+                {
+                    sampling.Set();if(!release.WaitOne(5000))throw new TimeoutException("Controlled process sample was not released.");
+                };
+                try
+                {
+                    window.Hide();window.Monitoring.SetViewState(true,true);
+                    Assert.IsTrue(sampling.WaitOne(2000),"The resumed sample must be in flight before checking Loading.");Drain();
+                    Assert.AreEqual(window.Monitoring.Labels["ProcessLoading"],status.Text);Assert.AreEqual("—",window.Monitoring.ProcessCountText);
+                    _processMonitor.Mode="empty";release.Set();
+                    Assert.IsTrue(Until(delegate { return window.Monitoring.ProcessStatusText==window.Monitoring.Labels["ProcessEmpty"]; }),"A successful empty read must reach the real window.");Drain();
+                    Assert.AreEqual(window.Monitoring.Labels["ProcessEmpty"],status.Text);Assert.AreEqual(window.Monitoring.Labels["ProcessEmpty"],empty.Text);
+                    Assert.AreEqual(string.Format(Localizer.Culture,window.Monitoring.Labels["ProcessMatches"],0,0),window.Monitoring.ProcessCountText);
+                }
+                finally
+                {
+                    _processMonitor.BeforeSample=null;release.Set();window.Close();
+                    Assert.IsTrue(Until(delegate { return _processMonitor.Disposals==1; }),"The owned monitor must finish before disposing the test gates.");
+                }
+            }
         }
 
         [Test]
@@ -963,6 +1011,9 @@ namespace WinMemoryCleaner.Test
             Assert.IsFalse(window.Monitoring.CanCancelDriverPreparation);
             buttons[2].RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.IsNull(typeof(MonitoringViewModel).GetField("_installer",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(window.Monitoring));
+            var details=((StackPanel)panel.Parent).Children.OfType<Expander>().Single();
+            Assert.IsFalse(details.IsExpanded,"Long settings notes must stay collapsed by default.");
+            details.IsExpanded=true;Drain();window.UpdateLayout();
             Assert.AreEqual(1,Descendants<TextBlock>(window).Count(t=>t.Text==window.Monitoring.Labels["SensorInstallerSourceNote"]));
             if(Environment.GetEnvironmentVariable("WMC_CAPTURE_INSTALLER_SETTINGS")=="1")
             {
@@ -1221,6 +1272,114 @@ namespace WinMemoryCleaner.Test
             }
             finally { cleaner.IsOptimizationRunning=false;Drain(); }
             Assert.IsTrue(button.IsEnabled);
+        }
+
+        [TestCase("zh-Hans")]
+        [TestCase("en")]
+        public void FpsLayout_OverviewDetailsAreOptionalAndFitTheMinimum(string language)
+        {
+            var window=CreateProcessWindow();window.Show();window.Width=window.MinWidth;window.Height=window.MinHeight;
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo(language));Drain();window.UpdateLayout();
+            var details=window.FindName("OverviewDetails") as Expander;
+            Assert.IsNotNull(details,"Long source explanations belong in an optional details section, not between every reading.");
+            Assert.IsFalse(details.IsExpanded);
+            var content=details.Content as FrameworkElement;Assert.IsNotNull(content);Assert.IsFalse(content.IsVisible);
+            var overview=(ScrollViewer)window.FindName("OverviewPage");
+            Assert.LessOrEqual(overview.ScrollableHeight,1,"The primary readings should fit the 760x520 minimum with details closed.");
+            foreach(string name in new[]{"CpuValue","GpuValue","CpuTemperatureValue","GpuTemperatureValue"})
+            {
+                var reading=(TextBlock)window.FindName(name);Assert.IsTrue(reading.IsVisible);Assert.Greater(reading.ActualWidth,40,name);
+                var corner=reading.TranslatePoint(new Point(reading.ActualWidth,reading.ActualHeight),overview);
+                Assert.LessOrEqual(corner.X,overview.ActualWidth,name);Assert.LessOrEqual(corner.Y,overview.ActualHeight,name);
+            }
+            details.IsExpanded=true;Drain();Assert.IsTrue(content.IsVisible,"Source caveats remain available, rather than being deleted.");
+        }
+
+        [Test]
+        public void FpsLayout_DisplayIsOptionalAndModeSelectionSurvivesTranslation()
+        {
+            var window=CreateProcessWindow();window.Show();Select(2);Drain();
+            var toggle=window.FindName("FpsToggle") as CheckBox;
+            Assert.IsNotNull(toggle,"FPS must be a selectable display item, not an always-on capture.");
+            Assert.AreEqual(false,toggle.IsChecked);
+            var choice=window.FindName("FpsTargetModeChoice") as ComboBox;
+            Assert.IsNotNull(choice);Assert.AreEqual(2,choice.Items.Count);
+            toggle.IsChecked=true;toggle.GetBindingExpression(ToggleButton.IsCheckedProperty).UpdateSource();Drain();
+            choice.SelectedIndex=1;choice.GetBindingExpression(Selector.SelectedIndexProperty).UpdateSource();Drain();
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo("en"));Drain();
+            Assert.AreEqual(1,choice.SelectedIndex,"Renaming the choice must not reset the chosen target mode.");
+            Assert.AreEqual(window.Monitoring.Labels["FpsManual"],((ComboBoxItem)choice.SelectedItem).Content);
+            Assert.AreEqual(32,Settings.Monitoring.Items&32);
+            toggle.IsChecked=false;toggle.GetBindingExpression(ToggleButton.IsCheckedProperty).UpdateSource();Drain();
+            Assert.AreEqual(0,Settings.Monitoring.Items&32);
+        }
+
+        [Test]
+        public void FpsLayout_ManualTargetChangesOnlyAfterAnExplicitValidSelection()
+        {
+            var window=CreateProcessWindow();ShowProcesses(window);
+            var track=window.FindName("TrackSelectedFps") as Button;
+            Assert.IsNotNull(track,"A game must be selectable from the existing process list.");
+            Assert.IsFalse(track.IsEnabled);SelectProcess(window,1);Assert.IsTrue(track.IsEnabled);
+            track.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Drain();
+            var target=typeof(MonitoringViewModel).GetProperty("FpsTargetText");Assert.IsNotNull(target);
+            string selected=(string)target.GetValue(window.Monitoring,null);StringAssert.Contains("game.exe",selected);StringAssert.Contains("8002",selected);
+            SelectProcess(window,2);Assert.AreEqual(selected,target.GetValue(window.Monitoring,null),"A table highlight alone must not retarget FPS.");
+            track.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Drain();StringAssert.Contains("other.exe",(string)target.GetValue(window.Monitoring,null));
+            ApplyProcesses(window,null,"controlled stale process list");SelectProcess(window,0);Drain();
+            Assert.IsFalse(track.IsEnabled,"Stale/failed process data must not retarget capture.");
+        }
+
+        [Test]
+        public void FpsLayout_OverlayItemCanBeToggledWithoutDroppingOtherReadings()
+        {
+            var window=CreateProcessWindow();window.Show();Drain();Set(Monitoring,"OverlayEnabled",true);Drain();
+            var overlay=Application.Current.Windows.Cast<Window>().OfType<MonitoringOverlay>().Single();
+            var reading=overlay.FindName("OverlayFpsValue") as TextBlock;
+            Assert.IsNotNull(reading,"The overlay must expose a separately selectable FPS item.");Assert.IsFalse(reading.IsVisible);
+            Set(Monitoring,"FpsTargetMode",1);Set(Monitoring,"ShowFps",true);Drain();
+            Assert.IsTrue(reading.IsVisible);Assert.AreEqual("—",reading.Text,"No selected source is unavailable, not fake 0/60 FPS.");
+            Assert.IsTrue(((TextBlock)overlay.FindName("OverlayCpuValue")).IsVisible);
+            Set(Monitoring,"ShowFps",false);Drain();Assert.IsFalse(reading.IsVisible);
+            Assert.IsTrue(((TextBlock)overlay.FindName("OverlayGpuValue")).IsVisible);
+        }
+        [Test]
+        public void FpsLayout_ActualPagesMinimizeAndCompactModeFollowVisibleDemand()
+        {
+            var window=CreateProcessWindow();window.Show();Drain();Set(Monitoring,"ShowFps",true);Drain();
+            Assert.AreEqual(1,_fpsCreations);Assert.IsTrue(_fpsMonitor.Active);
+            Select(1);Drain();Assert.IsFalse(_fpsMonitor.Active,"No FPS reading is visible on Processes without an overlay.");
+            Select(0);Drain();Assert.IsTrue(_fpsMonitor.Active);
+            Select(2);Drain();Assert.IsFalse(_fpsMonitor.Active);
+            Set(Monitoring,"OverlayEnabled",true);Drain();Assert.IsTrue(_fpsMonitor.Active);
+            Set(Monitoring,"OverlayEnabled",false);Drain();Assert.IsFalse(_fpsMonitor.Active);
+            Select(0);Drain();window.WindowState=WindowState.Minimized;Drain();Assert.IsFalse(_fpsMonitor.Active);
+            window.WindowState=WindowState.Normal;Drain();Assert.IsTrue(_fpsMonitor.Active);
+            var cleaner=(MainViewModel)window.DataContext;cleaner.CompactMode=true;Drain();Assert.IsFalse(_fpsMonitor.Active);
+            cleaner.CompactMode=false;Drain();Assert.IsTrue(_fpsMonitor.Active);
+            window.Hide();Drain();Assert.IsFalse(_fpsMonitor.Active);
+            Set(Monitoring,"OverlayEnabled",true);Drain();Assert.IsTrue(_fpsMonitor.Active);
+            Set(Monitoring,"ShowFps",false);Drain();Assert.IsFalse(_fpsMonitor.Active);Assert.AreEqual(1,_fpsCreations);
+        }
+
+        [TestCase("zh-Hans")]
+        [TestCase("en")]
+        public void FpsLayout_EnabledReadingAndSelectionFitTheMinimum(string language)
+        {
+            var window=CreateProcessWindow();window.Show();window.Width=window.MinWidth;window.Height=window.MinHeight;
+            Set(Monitoring,"FpsTargetMode",1);Set(Monitoring,"ShowFps",true);
+            Localizer.Language=new Language(CultureInfo.GetCultureInfo(language));Drain();window.UpdateLayout();
+            var overview=(ScrollViewer)window.FindName("OverviewPage");
+            var reading=(TextBlock)window.FindName("FpsValue");var choose=(Button)window.FindName("ChooseFpsTarget");
+            Assert.IsTrue(reading.IsVisible);Assert.AreEqual("—",reading.Text);Assert.Greater(choose.ActualWidth,50);
+            var corner=reading.TranslatePoint(new Point(reading.ActualWidth,reading.ActualHeight),overview);
+            Assert.LessOrEqual(corner.Y,overview.ActualHeight,"FPS must be readable without opening the optional details.");
+            choose.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Drain();
+            Assert.AreEqual(Visibility.Visible,((FrameworkElement)window.FindName("ProcessPage")).Visibility);
+            Assert.IsTrue(Until(delegate { return window.Monitoring.ProcessCount==3; }));SelectProcess(window,1);
+            var track=(Button)window.FindName("TrackSelectedFps");Assert.IsTrue(track.IsEnabled);track.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Drain();
+            StringAssert.Contains("game.exe",window.Monitoring.FpsTargetText);
+            Assert.Greater(((DataGrid)window.FindName("ProcessGrid")).ActualHeight,70);
         }
     }
 }
