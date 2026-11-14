@@ -19,6 +19,7 @@ namespace WinMemoryCleaner.Test
         private sealed class Resources : IResourceMonitor
         {
             internal int Samples,Disposals;
+            internal ProcessSnapshot AdditionalProcess;
             public ResourceSnapshot Sample(bool processes,bool temperatures)
             {
                 Interlocked.Increment(ref Samples);
@@ -27,6 +28,7 @@ namespace WinMemoryCleaner.Test
                 {
                     snapshot.Processes.Add(new ProcessSnapshot { Id=8101,CreationTime=2101,Name="first-game.exe" });
                     snapshot.Processes.Add(new ProcessSnapshot { Id=8102,CreationTime=2102,Name="second-game.exe" });
+                    if(AdditionalProcess!=null)snapshot.Processes.Add(AdditionalProcess);
                 }
                 return snapshot;
             }
@@ -121,12 +123,18 @@ namespace WinMemoryCleaner.Test
                 var method=typeof(MonitoringViewModel).GetMethod("ClearFpsTarget",Members);
                 Assert.IsNotNull(method);method.Invoke(Model,null);
             }
-            internal void Processes()
+            internal void Processes(int expectedCount=2)
             {
                 Model.SetViewState(true,true);
-                Assert.IsTrue(Until(delegate { return Model.ProcessCount==2; }),"Controlled process snapshots must be published.");
+                Assert.IsTrue(Until(delegate { return Model.ProcessCount==expectedCount; }),"Controlled process snapshots must be published.");
             }
             internal void Select(int index) { Model.SelectedProcess=(ProcessRow)Model.ProcessesView.GetItemAt(index); }
+            internal void SelectId(int id)
+            {
+                foreach(ProcessRow row in Model.ProcessesView)
+                    if(row.Id==id) { Model.SelectedProcess=row;return; }
+                Assert.Fail("The controlled process row must exist before selection.");
+            }
             internal bool HasPendingApply
             { get { return (int)typeof(MonitoringViewModel).GetField("_pending",Members).GetValue(Model)!=0; } }
             internal bool WorkerIdle
@@ -248,6 +256,47 @@ namespace WinMemoryCleaner.Test
                 context.Select(1);Assert.AreEqual(first,context.Get<string>("FpsTargetText"),"Highlighting another row is not a target-selection action.");
                 context.Stale();context.Select(1);Assert.IsFalse(context.Get<bool>("CanUseSelectedFpsTarget"));Assert.IsFalse(context.UseSelected());
                 Assert.AreEqual(first,context.Get<string>("FpsTargetText"));
+            }
+        }
+
+        private static ProcessSnapshot SelfTarget()
+        { return new ProcessSnapshot { Id=(int)MonitoringNativeMethods.GetCurrentProcessId(),CreationTime=2103,Name="WinMemoryCleaner.Community.exe" }; }
+
+        [Test]
+        public void SelfProcessIsNotAnEligibleManualFpsTarget()
+        {
+            using(var context=new Context())
+            {
+                context.Resource.AdditionalProcess=SelfTarget();context.Processes(3);
+                context.SelectId(context.Resource.AdditionalProcess.Id);
+                Assert.IsTrue(context.Model.CanActOnSelectedProcess,"Self remains eligible for general process operations.");
+                Assert.IsTrue(context.Model.IsCurrentProcessTarget(context.Model.SelectedProcess.Snapshot));
+                Assert.IsFalse(context.Get<bool>("CanUseSelectedFpsTarget"),"The cleaner cannot be its own FPS target.");
+                Assert.IsFalse(context.UseSelected());Assert.IsFalse(context.Get<bool>("HasFpsTarget"));
+                Assert.AreEqual(0,context.Get<int>("FpsTargetMode"));Assert.IsFalse(context.Get<bool>("ShowFps"));
+                Assert.AreEqual(0,context.Creations);Assert.IsNull(context.Fps.Target);
+            }
+        }
+
+        [Test]
+        public void RejectedSelfSelectionPreservesTheExistingManualFpsTarget()
+        {
+            using(var context=new Context())
+            {
+                context.Resource.AdditionalProcess=SelfTarget();context.Processes(3);context.SelectId(8101);
+                Assert.IsTrue(context.UseSelected());string targetText=context.Get<string>("FpsTargetText");
+                int eligibilityChanges=0;
+                context.Model.PropertyChanged+=delegate(object sender,System.ComponentModel.PropertyChangedEventArgs args)
+                { if(args.PropertyName=="CanUseSelectedFpsTarget")eligibilityChanges++; };
+                context.SelectId(context.Resource.AdditionalProcess.Id);
+                Assert.IsTrue(context.Model.CanActOnSelectedProcess);Assert.Greater(eligibilityChanges,0);
+                Assert.IsFalse(context.UseSelected(),"Selecting self must be rejected without replacing the prior target.");
+                Assert.IsFalse(context.Get<bool>("CanUseSelectedFpsTarget"));Assert.IsTrue(context.Get<bool>("HasFpsTarget"));
+                Assert.AreEqual(targetText,context.Get<string>("FpsTargetText"));Assert.AreEqual(1,context.Get<int>("FpsTargetMode"));
+                Assert.IsFalse(context.Get<bool>("ShowFps"));Assert.AreEqual(0,context.Creations);
+                context.Set("OverlayEnabled",true);context.Set("ShowFps",true);
+                Assert.AreEqual(8101,context.Fps.Target.Id);Assert.AreEqual(2101,context.Fps.Target.CreationTime);
+                Assert.AreEqual("first-game.exe",context.Fps.Target.Name);Assert.IsFalse(context.Fps.Follow);
             }
         }
 

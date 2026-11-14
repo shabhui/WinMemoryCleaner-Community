@@ -146,7 +146,8 @@ namespace WinMemoryCleaner
         public string ProcessCountText { get { return _processes.CountText; } }
         public bool CanClearSearch { get { return _processes.CanClearSearch; } }
         public bool CanActOnSelectedProcess { get { return _processes.CanActOnSelectedProcess; } }
-        public bool CanUseSelectedFpsTarget { get { return !_disposed&&CanActOnSelectedProcess; } }
+        // General process actions may target self; DirectX Present tracking may not.
+        public bool CanUseSelectedFpsTarget { get { return !_disposed&&CanActOnSelectedProcess&&SelectedProcess.Id!=(int)MonitoringNativeMethods.GetCurrentProcessId(); } }
         public string ProcessStatusText { get { return _processes.StatusText; } }
         public string ProcessStatusDetail { get { return _processes.StatusDetail; } }
         public bool HasProcessStatus { get { return _processes.HasStatus; } }
